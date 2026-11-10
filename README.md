@@ -1,6 +1,6 @@
 <p align="center"><img src="docs/icon.png" width="96" alt="Orbit"></p>
 <h1 align="center">Orbit <sup>beta</sup></h1>
-<p align="center"><b>Your AI agent for Windows.</b> Bring any model. Orbit runs your computer for you.</p>
+<p align="center"><b>Your AI agent for Windows.</b> Bring any model. Orbit runs your computer for you.<br><a href="https://orbit-agent-app.vercel.app">orbit-agent-app.vercel.app</a></p>
 <p align="center">
   <a href="https://github.com/AstralVortex1610/OpenOrbit/releases/latest"><img src="https://img.shields.io/github/v/release/AstralVortex1610/OpenOrbit?include_prereleases&label=download&color=c4673a" alt="Download"></a>
   <img src="https://img.shields.io/badge/status-beta-e4a270" alt="Beta">

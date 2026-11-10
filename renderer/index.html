@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval' blob: http://127.0.0.1:*; worker-src 'self' blob: http://127.0.0.1:*; connect-src 'self' blob: data: http://127.0.0.1:*;" />
+  <title>Orbit</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- Title bar -->
+  <header class="titlebar">
+    <div class="tb-brand"><img class="logo-sm" src="mark.png" alt="" /><span>Orbit</span></div>
+    <div class="tb-status" id="tbStatus"></div>
+    <div class="tb-buttons">
+      <button data-win="minimize" title="Minimize"><svg viewBox="0 0 12 12"><path d="M2 6h8"/></svg></button>
+      <button data-win="maximize" title="Maximize"><svg viewBox="0 0 12 12"><rect x="2.5" y="2.5" width="7" height="7" rx="1"/></svg></button>
+      <button data-win="close" class="tb-close" title="Close to tray"><svg viewBox="0 0 12 12"><path d="M3 3l6 6M9 3l-6 6"/></svg></button>
+    </div>
+  </header>
+
+  <div class="shell">
+    <!-- Rail -->
+    <nav class="rail">
+      <button class="rail-btn active" data-view="home" title="Home">
+        <svg viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5V19a1.5 1.5 0 0 1-1.5 1.5H15v-6H9v6H5.5A1.5 1.5 0 0 1 4 19z"/></svg>
+        <span>Home</span>
+      </button>
+      <button class="rail-btn" data-view="chat" title="Chat">
+        <svg viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4h0A2.5 2.5 0 0 1 4 13.5z"/></svg>
+        <span>Chat</span>
+      </button>
+      <button class="rail-btn" data-view="projects" title="Projects">
+        <svg viewBox="0 0 24 24"><path d="M3.5 7.5A2 2 0 0 1 5.5 5.5h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg>
+        <span>Projects</span>
+      </button>
+      <button class="rail-btn" data-view="updates" title="Updates">
+        <svg viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg>
+        <span>Updates</span><i class="count" id="updBadge"></i>
+      </button>
+      <button class="rail-btn" data-view="tasks" title="Tasks">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>
+        <span>Tasks</span>
+      </button>
+      <button class="rail-btn" data-view="memory" title="Memory">
+        <svg viewBox="0 0 24 24"><path d="M9 4.5a3 3 0 0 0-3 3v.2A3 3 0 0 0 4.5 13a3 3 0 0 0 2 4.6A3 3 0 0 0 12 19V5.6A3 3 0 0 0 9 4.5zM15 4.5a3 3 0 0 1 3 3v.2a3 3 0 0 1 1.5 5.3 3 3 0 0 1-2 4.6A3 3 0 0 1 12 19"/></svg>
+        <span>Memory</span>
+      </button>
+      <div class="rail-spacer"></div>
+      <button class="rail-btn" data-view="settings" title="Settings">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+        <span>Settings</span>
+      </button>
+    </nav>
+
+    <main class="views">
+      <!-- CHAT -->
+      <!-- HOME -->
+      <section class="view active" id="view-home">
+        <div class="page home">
+          <div class="home-glow" aria-hidden="true"></div>
+          <div class="home-head">
+            <div>
+              <div class="home-date" id="homeDate"></div>
+              <h1 id="homeGreeting">Good evening.</h1>
+              <div class="home-pulse" id="homePulse"></div>
+            </div>
+            <img class="home-mark" src="mark.png" alt="" />
+          </div>
+          <form class="ask" id="homeAsk">
+            <svg viewBox="0 0 24 24"><path d="M12 3.5l1.9 5.2 5.3 1.8-5.3 1.9L12 17.6l-1.9-5.2-5.3-1.9 5.3-1.8z"/><path d="M19 15.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg>
+            <input id="homeAskInput" placeholder="Ask Orbit anything, or say what to put on your Home…" autocomplete="off" />
+            <button type="submit" class="send" title="Send"><svg class="i-send" viewBox="0 0 24 24"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5"/></svg></button>
+          </form>
+
+          <div class="sec-head"><h3>Panels</h3><button class="ghost sm" id="addPanelBtn"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>New panel</button></div>
+          <div class="panels" id="panels"></div>
+
+          <div class="home-cols">
+            <div>
+              <div class="sec-head"><h3>Latest updates</h3><button class="link" data-goto="updates">See all</button></div>
+              <div class="mini-feed" id="homeUpdates"></div>
+            </div>
+            <div>
+              <div class="sec-head"><h3>Projects</h3><button class="link" data-goto="projects">All projects</button></div>
+              <div class="mini-projects" id="homeProjects"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- PROJECTS -->
+      <section class="view" id="view-projects">
+        <div class="page">
+          <div class="page-head">
+            <div><h2>Projects</h2><p>Separate spaces for work that keeps going. Each has its own chat, files and a brief Orbit keeps up to date.</p></div>
+            <button class="primary" id="newProjectBtn"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>New project</button>
+          </div>
+          <div class="proj-grid" id="projGrid"></div>
+        </div>
+      </section>
+
+      <!-- UPDATES -->
+      <section class="view" id="view-updates">
+        <div class="page narrow">
+          <div class="page-head">
+            <div><h2>Updates</h2><p>Everything Orbit did on its own: scheduled runs, background tasks, replies you missed, panels that need you.</p></div>
+            <div class="head-actions"><button class="ghost sm" id="updReadAll">Mark all read</button><button class="ghost sm" id="updClear">Clear</button></div>
+          </div>
+          <div class="filters" id="updFilters">
+            <button class="filter on" data-f="">All</button><button class="filter" data-f="task">Scheduled</button><button class="filter" data-f="worker">Background</button><button class="filter" data-f="project">Projects</button><button class="filter" data-f="chat">Chat</button><button class="filter" data-f="panel">Panels</button>
+          </div>
+          <div class="feed" id="updFeed"></div>
+        </div>
+      </section>
+
+      <section class="view view-chat" id="view-chat">
+        <div class="scope-bar" id="scopeBar">
+          <button class="scope-back" id="scopeBack" title="All projects"><svg viewBox="0 0 24 24"><path d="M14.5 6 8.5 12l6 6"/></svg></button>
+          <span class="proj-mono" id="scopeMono"></span>
+          <div class="scope-title"><b id="scopeName"></b><span id="scopeAbout"></span></div>
+          <button class="ghost sm" id="drawerBtn"><svg viewBox="0 0 24 24"><path d="M5 4.5h14v15H5zM14.5 4.5v15"/></svg>Brief &amp; files</button>
+        </div>
+        <aside class="drawer" id="drawer">
+          <div class="drawer-head"><h3>Brief</h3><button class="primary sm" id="briefSave" disabled>Save</button></div>
+          <p class="muted">The project's standing memory. Orbit reads it every time and keeps it current.</p>
+          <textarea id="briefText" spellcheck="false"></textarea>
+          <div class="drawer-head"><h3>Files</h3><button class="ghost sm" id="openProjFolder">Open folder</button></div>
+          <div class="file-list" id="fileList"></div>
+          <div class="drawer-foot"><button class="ghost sm" id="clearProjChat">Clear chat</button><button class="ghost sm danger" id="deleteProj">Delete project</button></div>
+        </aside>
+        <div class="scroller" id="scroller">
+          <div class="welcome" id="welcome">
+            <div class="orbit-hero" aria-hidden="true">
+              <div class="halo"></div>
+              <div class="ring r1"><b></b></div>
+              <div class="ring r2"><b></b></div>
+              <img class="hero-mark" src="mark.png" alt="" />
+            </div>
+            <h1 id="greeting">Good evening.</h1>
+            <p class="sub">I'm Orbit. I work on your laptop, remember what matters, and come to you when something needs you.</p>
+            <div class="chips" id="chips">
+              <button class="chip">What's taking up space on my C drive?</button>
+              <button class="chip">Plan my study week and remind me daily</button>
+              <button class="chip">Find today's top AI news on GitHub</button>
+              <button class="chip">Set up a morning brief at 7:30</button>
+            </div>
+          </div>
+          <div class="messages" id="messages"></div>
+        </div>
+
+        <div class="composer-wrap">
+          <div class="worker-tray" id="workerTray"></div>
+          <div class="attachments" id="attachments"></div>
+          <form class="composer" id="composer">
+            <button type="button" class="icon-btn" id="attachBtn" title="Attach an image">
+              <svg viewBox="0 0 24 24"><path d="M21 11.5 12.6 20a5.5 5.5 0 0 1-7.8-7.8l8.5-8.5a3.7 3.7 0 0 1 5.2 5.2l-8.5 8.5a1.8 1.8 0 0 1-2.6-2.6l7.8-7.8"/></svg>
+            </button>
+            <input type="file" id="fileInput" accept="image/*" multiple hidden />
+            <textarea id="input" rows="1" placeholder="Message Orbit…" autocomplete="off"></textarea>
+            <button type="button" class="icon-btn live-btn" id="liveBtn" title="Live voice: talk with Orbit">
+              <svg viewBox="0 0 24 24"><path d="M3 12h2M7 8.5v7M11 5v14M15 8.5v7M19 10.5v3M21 12h0"/></svg>
+            </button>
+            <button type="button" class="icon-btn mic" id="micBtn" title="Dictate a message">
+              <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>
+              <span class="mic-wave"><i></i><i></i><i></i><i></i></span>
+            </button>
+            <button type="submit" class="send" id="sendBtn" title="Send">
+              <svg class="i-send" viewBox="0 0 24 24"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5"/></svg>
+              <svg class="i-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
+            </button>
+          </form>
+          <div class="hint" id="hint">Enter to send · Shift+Enter for a new line · Ctrl+Shift+O to summon Orbit anywhere</div>
+        </div>
+      </section>
+
+      <!-- TASKS -->
+      <section class="view" id="view-tasks">
+        <div class="page">
+          <div class="page-head">
+            <div>
+              <h2>Tasks</h2>
+              <p>What Orbit does on its own. Ask Orbit in chat to add one, like "remind me to revise physics every day at 6".</p>
+            </div>
+          </div>
+          <div class="task-list" id="taskList"></div>
+        </div>
+      </section>
+
+      <!-- MEMORY -->
+      <section class="view" id="view-memory">
+        <div class="page page-split">
+          <aside class="mem-side">
+            <div class="page-head small">
+              <h2>Memory</h2>
+              <button class="ghost" id="openMemFolder">Open folder</button>
+            </div>
+            <p class="muted">What Orbit knows about you. It's yours to read, edit or delete.</p>
+            <div class="mem-list" id="memList"></div>
+            <div class="new-mem">
+              <input id="newMemName" placeholder="new-file.md" />
+              <button class="ghost" id="newMemBtn">Add</button>
+            </div>
+          </aside>
+          <div class="mem-editor">
+            <div class="mem-editor-head">
+              <span id="memName">Select a file</span>
+              <button class="primary sm" id="memSave" disabled>Save</button>
+            </div>
+            <textarea id="memText" spellcheck="false" disabled></textarea>
+          </div>
+        </div>
+      </section>
+
+      <!-- SETTINGS -->
+      <section class="view" id="view-settings">
+        <div class="page narrow">
+          <div class="page-head"><div><h2>Settings</h2><p>Give Orbit a brain, then tune how it works with you.</p></div></div>
+
+          <div class="card">
+            <h3>Brain</h3>
+            <p class="muted">Any OpenAI-compatible API works: OpenAI, Anthropic, Google Gemini, OpenRouter, Groq, or a local model through Ollama or LM Studio.</p>
+            <label>Provider preset
+              <select id="preset">
+                <option value="">Custom</option>
+                <optgroup label="United States">
+                  <option value="https://api.openai.com/v1">OpenAI</option>
+                  <option value="https://api.anthropic.com/v1">Anthropic (Claude)</option>
+                  <option value="https://generativelanguage.googleapis.com/v1beta/openai">Google Gemini</option>
+                  <option value="https://api.x.ai/v1">xAI (Grok)</option>
+                  <option value="https://api.perplexity.ai">Perplexity (Sonar)</option>
+                  <option value="https://api.cohere.ai/compatibility/v1">Cohere</option>
+                  <option value="https://api.groq.com/openai/v1">Groq (fast Llama, Qwen, GPT-OSS)</option>
+                  <option value="https://api.cerebras.ai/v1">Cerebras</option>
+                  <option value="https://api.together.xyz/v1">Together AI</option>
+                  <option value="https://api.fireworks.ai/inference/v1">Fireworks AI</option>
+                  <option value="https://integrate.api.nvidia.com/v1">NVIDIA NIM</option>
+                </optgroup>
+                <optgroup label="China">
+                  <option value="https://api.deepseek.com/v1">DeepSeek</option>
+                  <option value="https://dashscope-intl.aliyuncs.com/compatible-mode/v1">Qwen, Alibaba (international)</option>
+                  <option value="https://dashscope.aliyuncs.com/compatible-mode/v1">Qwen, Alibaba (China)</option>
+                  <option value="https://api.moonshot.ai/v1">Kimi, Moonshot (international)</option>
+                  <option value="https://api.moonshot.cn/v1">Kimi, Moonshot (China)</option>
+                  <option value="https://api.z.ai/api/paas/v4">GLM, Z.ai (international)</option>
+                  <option value="https://open.bigmodel.cn/api/paas/v4">GLM, Zhipu (China)</option>
+                  <option value="https://api.minimax.io/v1">MiniMax (international)</option>
+                  <option value="https://api.minimax.chat/v1">MiniMax (China)</option>
+                  <option value="https://qianfan.baidubce.com/v2">ERNIE, Baidu Qianfan</option>
+                  <option value="https://ark.cn-beijing.volces.com/api/v3">Doubao, ByteDance Volcengine Ark</option>
+                  <option value="https://api.hunyuan.cloud.tencent.com/v1">Hunyuan, Tencent</option>
+                  <option value="https://api.stepfun.com/v1">StepFun</option>
+                  <option value="https://api.siliconflow.cn/v1">SiliconFlow (many Chinese models)</option>
+                </optgroup>
+                <optgroup label="Europe">
+                  <option value="https://api.mistral.ai/v1">Mistral</option>
+                </optgroup>
+                <optgroup label="One key, every model">
+                  <option value="https://openrouter.ai/api/v1">OpenRouter</option>
+                </optgroup>
+                <optgroup label="On your laptop">
+                  <option value="http://localhost:11434/v1">Ollama</option>
+                  <option value="http://localhost:1234/v1">LM Studio</option>
+                </optgroup>
+              </select>
+            </label>
+            <label>Base URL<input id="s-baseUrl" placeholder="https://api.openai.com/v1" /></label>
+            <label>API key
+              <input id="s-apiKey" type="password" placeholder="Paste your key" autocomplete="off" />
+              <small id="keyState" class="muted"></small>
+            </label>
+            <label>Model
+              <div class="row tight"><input id="s-model" list="modelList" placeholder="Pick from the list or type a name" /><button class="ghost" id="listModels" type="button">List models</button></div>
+              <datalist id="modelList"></datalist>
+              <small id="modelState" class="muted"></small>
+            </label>
+            <label>Fast model for background tasks <span class="muted">(optional)</span><input id="s-fastModel" list="modelList" placeholder="Same as main model" /></label>
+            <label>Model for voice tasks <span class="muted">(pick a fast one)</span><input id="s-voiceModel" list="modelList" placeholder="Fast model, else main model" /></label>
+            <label>Voice transcription model<input id="s-transcribeModel" placeholder="whisper-1" /></label>
+            <div class="row">
+              <button class="ghost" id="testBtn">Test connection</button>
+              <span id="testResult" class="muted"></span>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Browser</h3>
+            <p class="muted">Orbit drives its own window of a browser already on your laptop. Sign in there once and it stays signed in.</p>
+            <label>Browser
+              <select id="s-browserChannel">
+                <option value="msedge">Microsoft Edge</option>
+                <option value="chrome">Google Chrome</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="card">
+            <h3>Hey Orbit</h3>
+            <p class="muted">Say "Hey Orbit" and then your request. The wake word is heard by a small speech model on this laptop; nothing is sent anywhere until you say it.</p>
+            <label class="toggle"><input type="checkbox" id="s-wakeWord" /><span></span>Listen for "Hey Orbit"</label>
+            <small class="muted" id="wakeState"></small>
+          </div>
+
+          <div class="card" id="liveCard">
+            <h3>Live voice</h3>
+            <p class="muted">A real back-and-forth call with Orbit. It hears your tone, reacts, and you can cut in mid-sentence. The voice model talks; Orbit's own agent does the work behind it.</p>
+            <label>Voice engine
+              <select id="s-liveEngine">
+                <option value="orbit">Orbit Voice (built in, free, runs on your laptop)</option>
+                <option value="gemini">Gemini Live (free tier with a Google AI Studio key)</option>
+                <option value="openai">OpenAI GPT-Live (full duplex, about $0.05 a minute)</option>
+              </select>
+            </label>
+            <div class="live-eng" data-eng="orbit">
+              <p class="muted small">Orbit hears you, thinks with your own model and speaks with a natural voice, all on this laptop. No voice key. The first call downloads about 200 MB once (Phonon voice + hearing); after that it works offline (except for the model you chose as its brain). Headphones keep it from hearing itself.</p>
+              <label>Who speaks
+                <select id="s-orbitTts">
+                  <option value="auto">Phonon (new, recommended): talks almost instantly, falls back to Windows voice if slow</option>
+                  <option value="phonon">Phonon only (Gradium Phonon 31m, runs on your laptop)</option>
+                  <option value="kokoro">Kokoro (the older natural voice)</option>
+                  <option value="windows">Windows voice (Microsoft, instant, nothing to download)</option>
+                </select>
+              </label>
+              <label>Phonon voice
+                <select id="s-orbitPhononVoice">
+                  <optgroup label="American">
+                    <option value="Easton">Easton, punchy, young (M)</option><option value="Miles">Miles, resonant, decisive (M)</option><option value="Micah">Micah, upbeat, playful (M)</option><option value="Preston">Preston, calm, focused (M)</option><option value="Trevor">Trevor, warm, mid-low (M)</option><option value="Russell">Russell, high energy, coach (M)</option>
+                    <option value="Harper">Harper, confident, friendly (F)</option><option value="Zoey">Zoey, playful, Gen Z (F)</option><option value="Juniper">Juniper, cheerful (F)</option><option value="Everly">Everly, soft, relaxed (F)</option><option value="Hadley">Hadley, kind, even (F)</option><option value="Delia">Delia, low, grounded (F)</option>
+                  </optgroup>
+                  <optgroup label="British">
+                    <option value="Toby">Toby, sparky assistant (M)</option><option value="Alfie">Alfie, punchy (M)</option><option value="Teddy">Teddy, quick, firm (M)</option><option value="Hugh">Hugh, soft, sincere (M)</option><option value="Edwin">Edwin, efficient, firm (M)</option><option value="Spencer">Spencer, light, patient (M)</option>
+                    <option value="Maeve">Maeve, sparky assistant (F)</option><option value="Imogen">Imogen, bubbly, warm (F)</option><option value="Pippa">Pippa, upbeat (F)</option><option value="Freya">Freya, young, bubbly (F)</option><option value="Lottie">Lottie, forward, crisp (F)</option><option value="Bryony">Bryony, rich, relaxed (F)</option>
+                  </optgroup>
+                  <option value="Default">Phonon default</option>
+                </select>
+              </label>
+              <label>Windows voice
+                <select id="s-orbitWinVoice"><option value="">Best English voice on this PC</option></select>
+              </label>
+              <label>Wait before answering
+                <select id="s-orbitPauseMs">
+                  <option value="700">Short pause (snappy)</option>
+                  <option value="900">Normal</option>
+                  <option value="1300">Long pause (I think while I talk)</option>
+                </select>
+              </label>
+              <label>Kokoro voice
+                <select id="s-orbitVoice">
+                  <option value="af_heart">Heart, warm (US)</option><option value="af_bella">Bella, bright (US)</option><option value="af_nicole">Nicole, soft (US)</option><option value="af_sarah">Sarah, calm (US)</option>
+                  <option value="am_michael">Michael, friendly (US)</option><option value="am_fenrir">Fenrir, deep (US)</option><option value="am_puck">Puck, playful (US)</option>
+                  <option value="bf_emma">Emma (British)</option><option value="bm_george">George (British)</option><option value="bm_fable">Fable (British)</option>
+                </select>
+              </label>
+              <label>Hearing
+                <select id="s-orbitStt">
+                  <option value="moonshine">Fast, English (Moonshine)</option>
+                  <option value="whisper">Multilingual, a bit slower (Whisper): Hindi and Hinglish too</option>
+                </select>
+              </label>
+              <label class="toggle"><input type="checkbox" id="s-orbitGpu" /><span></span>Use the GPU for the voice (experimental; leave off if it gets stuck)</label>
+              <div class="row"><button type="button" class="ghost" id="voicePreview">Test voice</button><span class="muted small" id="voiceState"></span></div>
+              <label class="toggle"><input type="checkbox" id="s-talkFirst" /><span></span>Orbit talks first, then checks in by itself when it's quiet</label>
+              <label class="toggle"><input type="checkbox" id="s-autoCall" /><span></span>Start a voice call by itself when Orbit opens</label>
+              <div class="row"><button type="button" class="ghost" id="voiceCheck">Run voice check</button><span class="muted small">Tests speakers, mic, voice and brain, step by step</span></div>
+              <div id="voiceCheckOut" class="vcheck"></div>
+            </div>
+            <div class="live-eng" data-eng="gemini">
+              <label>Gemini API key <small class="muted">free at aistudio.google.com/apikey</small>
+                <input id="k-liveGeminiKey" type="password" placeholder="AIza…" autocomplete="off" />
+                <small class="muted" id="k-liveGeminiKeyState"></small>
+              </label>
+              <label>Voice
+                <select id="s-liveGeminiVoice">
+                  <option value="Aoede">Aoede, breezy</option><option value="Kore">Kore, firm</option><option value="Leda">Leda, youthful</option><option value="Zephyr">Zephyr, bright</option>
+                  <option value="Puck">Puck, upbeat</option><option value="Charon">Charon, informative</option><option value="Fenrir">Fenrir, excitable</option><option value="Orus">Orus, firm</option>
+                </select>
+              </label>
+            </div>
+            <div class="live-eng" data-eng="openai">
+              <label>OpenAI API key <small class="muted">only used for the voice</small>
+                <input id="k-liveOpenaiKey" type="password" placeholder="sk-…" autocomplete="off" />
+                <small class="muted" id="k-liveOpenaiKeyState"></small>
+              </label>
+              <label>Voice
+                <select id="s-liveOpenaiVoice">
+                  <option value="marin">Marin</option><option value="gleam">Gleam, North American</option><option value="meridian">Meridian, North American</option>
+                  <option value="willow">Willow, Irish</option><option value="vesper">Vesper, British</option><option value="quartz">Quartz, Australian</option><option value="nira">Nira, Hindi</option>
+                </select>
+              </label>
+            </div>
+            <label class="toggle"><input type="checkbox" id="s-wakeOpensLive" /><span></span>"Hey Orbit" starts a live call</label>
+          </div>
+
+          <div class="card" id="accountsCard">
+            <h3>Accounts</h3>
+            <p class="muted">Direct connections are faster and more reliable than clicking through websites.</p>
+            <h4>Google (Gmail and Calendar)</h4>
+            <p class="muted small">One-time setup: in Google Cloud Console make an OAuth client of type <b>Desktop app</b>, turn on the Gmail and Calendar APIs, and add yourself as a test user. Paste the client ID and secret here, then Connect.</p>
+            <label>OAuth client ID<input id="s-googleClientId" placeholder="1234…apps.googleusercontent.com" autocomplete="off" /></label>
+            <label>Client secret<input id="k-googleClientSecret" type="password" placeholder="GOCSPX-…" autocomplete="off" /><small class="muted" id="k-googleClientSecretState"></small></label>
+            <div class="row"><button type="button" class="primary sm" id="googleConnect">Connect Google</button><button type="button" class="ghost" id="googleDisconnect">Disconnect</button><span class="muted small" id="googleState"></span></div>
+            <h4>Publishing (Netlify)</h4>
+            <label>Netlify access token <small class="muted">free at app.netlify.com/user/applications</small><input id="k-netlifyToken" type="password" placeholder="nfp_…" autocomplete="off" /><small class="muted" id="k-netlifyTokenState"></small></label>
+            <h4>Images</h4>
+            <label>Image model <small class="muted">uses your main provider unless you set one below</small><input id="s-imageModel" placeholder="e.g. an image model your key can use" /></label>
+            <label>Image provider base URL <small class="muted">(optional)</small><input id="s-imageBaseUrl" placeholder="Same as main" /></label>
+            <label>Image provider key <small class="muted">(optional)</small><input id="k-imageApiKey" type="password" autocomplete="off" /><small class="muted" id="k-imageApiKeyState"></small></label>
+          </div>
+
+          <div class="card">
+            <h3>Phone</h3>
+            <p class="muted">When you're away from the laptop, Orbit pings your phone with questions, approvals and briefs. Tap an answer and it carries on.</p>
+            <label>Ping my phone
+              <select id="s-phoneWhen">
+                <option value="away">When I'm away from the laptop</option>
+                <option value="always">Whenever Orbit isn't on screen</option>
+                <option value="never">Never</option>
+              </select>
+            </label>
+            <label>Count me as away after (minutes idle)<input id="s-phoneIdleMinutes" type="number" min="1" max="120" /></label>
+
+            <div class="phone-channel">
+              <label class="toggle"><input type="checkbox" id="s-ntfyEnabled" /><span></span><b>ntfy</b>&nbsp;<small class="muted">free app, no account</small></label>
+              <ol class="steps-mini">
+                <li>Install <b>ntfy</b> from the Play Store or App Store.</li>
+                <li>Tap <b>+</b> and subscribe to this topic: <code id="ntfyTopicShow"></code> <button class="link-btn" id="copyTopic" type="button">Copy</button></li>
+                <li>To message Orbit from your phone, also subscribe to <code id="ntfyReplyShow"></code> and post there.</li>
+              </ol>
+              <details><summary class="muted">Advanced</summary>
+                <label>ntfy server<input id="s-ntfyServer" placeholder="https://ntfy.sh" /></label>
+                <button class="ghost" id="newTopic" type="button">Make a new private topic</button>
+              </details>
+            </div>
+
+            <div class="phone-channel">
+              <label class="toggle"><input type="checkbox" id="s-telegramEnabled" /><span></span><b>Telegram</b>&nbsp;<small class="muted">chat with Orbit from anywhere</small></label>
+              <ol class="steps-mini">
+                <li>In Telegram, message <b>@BotFather</b>, send <code>/newbot</code>, and copy the token it gives you.</li>
+                <li>Paste it here: <input id="s-telegramToken" type="password" placeholder="123456:ABC…" autocomplete="off" /></li>
+                <li>Save, then send your bot this code: <code id="pairCode"></code></li>
+              </ol>
+              <small class="muted" id="tgState"></small>
+            </div>
+            <div class="row"><button class="ghost" id="phoneTest" type="button">Send a test ping</button><span class="muted" id="phoneResult"></span></div>
+          </div>
+
+          <div class="card">
+            <h3>You</h3>
+            <label>What should Orbit call you?<input id="s-userName" placeholder="Affan" /></label>
+          </div>
+
+          <div class="card">
+            <h3>Behaviour</h3>
+            <label>Ask before acting
+              <select id="s-approvalMode">
+                <option value="risky">Only for risky actions (recommended)</option>
+                <option value="always">Before every command and file write</option>
+                <option value="never">Never ask (careful)</option>
+              </select>
+            </label>
+            <label>Daily token cap<input id="s-dailyTokenCap" type="number" min="0" step="100000" /><small class="muted" id="usageNote"></small></label>
+            <label>Max steps per task<input id="s-maxSteps" type="number" min="3" max="100" /></label>
+            <label>Background tasks at once<input id="s-maxWorkers" type="number" min="1" max="6" /><small class="muted">Each one is a full copy of Orbit with its own browser tab. 3 is a good balance of speed and cost.</small></label>
+            <label class="toggle"><input type="checkbox" id="s-voiceReplies" /><span></span>Speak replies out loud in Orbit's voice</label>
+            <label class="toggle"><input type="checkbox" id="s-closeToTray" /><span></span>Keep running in the tray when closed</label>
+            <label class="toggle"><input type="checkbox" id="s-startWithWindows" /><span></span>Start with Windows</label>
+            <label>Summon hotkey<input id="s-hotkey" placeholder="Control+Shift+O" /></label>
+          </div>
+
+          <div class="card">
+            <h3>Look</h3>
+            <div class="theme-pick" id="themePick">
+              <button data-theme="dark" class="sw sw-dark"><i></i>Dark</button>
+              <button data-theme="light" class="sw sw-light"><i></i>Light</button>
+            </div>
+          </div>
+
+          <div class="card danger">
+            <h3>Conversation</h3>
+            <p class="muted">Clearing the thread keeps Orbit's memory.</p>
+            <button class="ghost danger-btn" id="clearThread">Clear chat history</button>
+          </div>
+
+          <div class="card about">
+            <img src="wordmark.png" alt="Orbit" class="wordmark" />
+            <p class="muted">Your personal agent. Built for Affan.</p>
+          </div>
+
+          <div class="save-bar"><span class="muted" id="appInfo"></span><button class="primary" id="saveSettings">Save settings</button></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="live" id="live" data-state="idle" aria-live="polite">
+    <div class="live-bg"></div>
+    <div class="live-top"><span class="live-badge"><i></i>Live</span><span class="live-engine" id="liveEngine"></span></div>
+    <div class="orb-wrap">
+      <div class="orb-ring r1"><b></b></div>
+      <div class="orb-ring r2"><b></b></div>
+      <div class="orb-ring r3"><b></b></div>
+      <div class="orb-glow"></div>
+      <div class="orb-core"></div>
+    </div>
+    <div class="live-status" id="liveStatus">Connecting…</div>
+    <div class="live-captions">
+      <div class="cap-orbit" id="liveOrbit"></div>
+      <div class="cap-you" id="liveYou"></div>
+    </div>
+    <div class="live-controls">
+      <button class="live-ctl" id="liveMute" title="Mute (Space)">
+        <svg class="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>
+        <svg class="i-muted" viewBox="0 0 24 24"><path d="M15 10V6a3 3 0 0 0-5.7-1.3M9 9v2a3 3 0 0 0 4.6 2.5M5.5 11a6.5 6.5 0 0 0 10.7 5M18.5 11a6.4 6.4 0 0 1-.6 2.7M12 17.5V21M4 4l16 16"/></svg>
+      </button>
+      <button class="live-ctl end" id="liveEnd" title="End (Esc)">
+        <svg viewBox="0 0 24 24"><path d="M3.5 14.5c4.7-4.2 12.3-4.2 17 0l-2 2.3-3.3-1.3v-2.4a10 10 0 0 0-6.4 0v2.4l-3.3 1.3z"/></svg>
+      </button>
+    </div>
+    <div class="live-hint">Talk naturally and interrupt whenever you like · Space to mute · Esc to end</div>
+  </div>
+
+  <div class="modal" id="modal" aria-hidden="true">
+    <form class="modal-card" id="modalForm">
+      <h3 id="modalTitle"></h3>
+      <p class="muted" id="modalSub"></p>
+      <div id="modalBody"></div>
+      <div class="modal-actions"><button type="button" class="ghost" id="modalCancel">Cancel</button><button type="submit" class="primary" id="modalOk">Save</button></div>
+    </form>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <script src="vendor/vosk.js"></script>
+  <script src="wake.js"></script>
+  <script src="markdown.js"></script>
+  <script src="voice/voice.js"></script>
+  <script src="live.js"></script>
+  <script src="app.js"></script>
+  <script src="hub.js"></script>
+</body>
+</html>

@@ -1,0 +1,66 @@
+{
+  "name": "orbit",
+  "productName": "Orbit",
+  "version": "0.8.1",
+  "description": "Orbit, your personal desktop agent.",
+  "main": "src/main.js",
+  "author": "Affan Mohammed",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist:win": "node build/bundle-voice.js && node build/patch-nsis.js && electron-builder --win nsis zip --x64",
+    "bundle:voice": "node build/bundle-voice.js",
+    "prestart": "node build/bundle-voice.js"
+  },
+  "devDependencies": {
+    "@huggingface/transformers": "^4.3.2",
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.0",
+    "esbuild": "^0.28.2",
+    "kokoro-js": "^1.2.1",
+    "resedit": "^2.0.3",
+    "vosk-browser": "^0.0.8"
+  },
+  "build": {
+    "appId": "com.affan.orbit",
+    "productName": "Orbit",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**",
+      "renderer/**",
+      "assets/**",
+      "package.json",
+      "!renderer/voice/worker-src.js",
+      "!renderer/_voice-test.html"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ],
+      "signAndEditExecutable": false
+    },
+    "afterPack": "build/afterPack.js",
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Orbit",
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "runAfterFinish": true,
+      "artifactName": "Orbit-Setup-${version}.exe"
+    },
+    "asarUnpack": [
+      "assets/vosk-model-small-en-us-0.15.tar.gz"
+    ]
+  },
+  "dependencies": {
+    "playwright-core": "^1.64.1",
+    "ws": "^8.22.0"
+  }
+}

@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.zip
+test/shot*.png
+test/screens/
+.env
+assets/vosk-model-small-en-us-0.15.tar.gz
+renderer/voice/worker.js

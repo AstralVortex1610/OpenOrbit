@@ -1,0 +1,30 @@
+// Renders the UI offscreen with a mocked API and saves screenshots.
+const { app, BrowserWindow } = require('electron');
+const path = require('path');
+const fs = require('fs');
+app.disableHardwareAcceleration();
+app.whenReady().then(async () => {
+  const win = new BrowserWindow({ width: 1180, height: 780, show: false, webPreferences: { offscreen: true, preload: path.join(__dirname, 'mock-preload.js'), contextIsolation: true } });
+  await win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+  const wait = (ms) => new Promise(r => setTimeout(r, ms));
+  await wait(1500);
+  fs.writeFileSync(path.join(__dirname, 'shot-welcome.png'), (await win.webContents.capturePage()).toPNG());
+  await win.webContents.executeJavaScript('window.__demo()');
+  await wait(1800);
+  fs.writeFileSync(path.join(__dirname, 'shot-chat.png'), (await win.webContents.capturePage()).toPNG());
+  await win.webContents.executeJavaScript("document.querySelector('[data-view=tasks]').click()");
+  await wait(900);
+  fs.writeFileSync(path.join(__dirname, 'shot-tasks.png'), (await win.webContents.capturePage()).toPNG());
+  await win.webContents.executeJavaScript("document.querySelector('[data-view=settings]').click()");
+  await wait(900);
+  await win.webContents.executeJavaScript("const p=document.querySelector('#preset');p.value='https://api.deepseek.com/v1';p.dispatchEvent(new Event('change'));document.querySelector('#listModels').click();document.querySelector('#s-model').value='deepseek-chat';document.querySelector('#preset').scrollIntoView({block:'start'})");
+  await wait(900);
+  fs.writeFileSync(path.join(__dirname, 'shot-settings.png'), (await win.webContents.capturePage()).toPNG());
+  await win.webContents.executeJavaScript("document.querySelector('#s-phoneWhen').closest('.card').scrollIntoView({block:'start'})");
+  await wait(500);
+  fs.writeFileSync(path.join(__dirname, 'shot-settings2.png'), (await win.webContents.capturePage()).toPNG());
+  await win.webContents.executeJavaScript("document.documentElement.dataset.theme='light';document.querySelector('[data-view=chat]').click()");
+  await wait(900);
+  fs.writeFileSync(path.join(__dirname, 'shot-light.png'), (await win.webContents.capturePage()).toPNG());
+  app.quit();
+});

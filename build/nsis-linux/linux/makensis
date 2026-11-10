@@ -1,0 +1,7 @@
+#!/bin/bash
+# Native ARM makensis + electron-builder's own NSIS 3.0.4 data (stubs/plugins), so the
+# uninstaller can be extracted without Wine.
+export NSISDIR=$(ls -d $HOME/.cache/electron-builder/nsis-3.0.4.1/nsis-3.0.4.1-*/ | head -1)
+args=()
+for a in "$@"; do [ "$a" = "-WX" ] && continue; args+=("$a"); done
+exec /usr/bin/makensis "${args[@]}"

@@ -8,7 +8,8 @@
   <a href="https://github.com/AstralVortex1610/OpenOrbit/stargazers"><img src="https://img.shields.io/github/stars/AstralVortex1610/OpenOrbit?style=social" alt="Stars"></a>
 </p>
 
-![Orbit Home](docs/screens/01-home.png)
+[![Watch the Orbit intro](https://img.youtube.com/vi/qJkSmQ-JPyw/maxresdefault.jpg)](https://youtu.be/qJkSmQ-JPyw)
+<p align="center"><a href="https://youtu.be/qJkSmQ-JPyw">▶ Watch the 74-second intro</a></p>
 
 > **Beta.** Orbit is new and moving fast. Expect rough edges, and please [open an issue](https://github.com/AstralVortex1610/OpenOrbit/issues) when something breaks.
 

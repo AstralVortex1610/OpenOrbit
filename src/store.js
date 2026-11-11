@@ -49,6 +49,8 @@ const DEFAULT_SETTINGS = {
   imageBaseUrl: '',
   googleClientId: '',
   googleEmail: '',
+  backupModels: [], // [{ id, model, baseUrl, apiKeyEnc }]: tried in order when the main model hits a limit
+  autoUpdate: true,
 };
 const SECRET_KEYS = ['liveGeminiKey', 'liveOpenaiKey', 'googleClientSecret', 'googleRefresh', 'netlifyToken', 'imageApiKey'];
 
@@ -115,6 +117,10 @@ class Store {
       } catch { s.apiKey = ''; }
     }
     for (const k of SECRET_KEYS) { s[k] = ''; if (s[k + 'Enc']) { try { s[k] = this._dec(s[k + 'Enc']); } catch { s[k] = ''; } } }
+    s.backupModels = (Array.isArray(s.backupModels) ? s.backupModels : []).filter(b => b && b.model).map(b => {
+      let apiKey = ''; if (b.apiKeyEnc) { try { apiKey = this._dec(b.apiKeyEnc); } catch {} }
+      return { id: b.id, model: b.model, baseUrl: b.baseUrl || '', apiKey };
+    });
     s.telegramToken = '';
     if (s.telegramTokenEnc) { try { s.telegramToken = this._dec(s.telegramTokenEnc); } catch { s.telegramToken = ''; } }
     return s;
@@ -128,18 +134,29 @@ class Store {
     const hasKey = !!s.apiKey;
     const masked = hasKey ? s.apiKey.slice(0, 4) + '…' + s.apiKey.slice(-4) : '';
     delete s.apiKey; delete s.apiKeyEnc;
+    s.backupModels = s.backupModels.map(b => ({ id: b.id, model: b.model, baseUrl: b.baseUrl, hasKey: !!b.apiKey, keyPreview: b.apiKey ? b.apiKey.slice(0, 4) + '…' + b.apiKey.slice(-4) : '' }));
     return { ...s, hasKey, keyPreview: masked };
   }
   saveSettings(incoming) {
     const cur = this._read('settings.json', {});
     const next = { ...cur };
-    for (const k of Object.keys(DEFAULT_SETTINGS)) if (incoming[k] !== undefined) next[k] = incoming[k];
+    for (const k of Object.keys(DEFAULT_SETTINGS)) if (k !== 'backupModels' && incoming[k] !== undefined) next[k] = incoming[k];
     if (typeof incoming.apiKey === 'string' && incoming.apiKey.trim()) {
       const key = incoming.apiKey.trim();
       const enc = this.safe && this.safe.isEncryptionAvailable() ? this.safe.encryptString(key) : Buffer.from(key, 'utf8');
       next.apiKeyEnc = enc.toString('base64');
     }
     if (incoming.clearKey) delete next.apiKeyEnc;
+    if (Array.isArray(incoming.backupModels)) {
+      const old = new Map((Array.isArray(cur.backupModels) ? cur.backupModels : []).map(b => [b.id, b]));
+      next.backupModels = incoming.backupModels.filter(b => b && String(b.model || '').trim()).slice(0, 8).map(b => {
+        const id = b.id || Math.random().toString(36).slice(2, 10);
+        const row = { id, model: String(b.model).trim(), baseUrl: String(b.baseUrl || '').trim() };
+        if (typeof b.apiKey === 'string' && b.apiKey.trim()) row.apiKeyEnc = this._enc(b.apiKey.trim());
+        else if (!b.clearKey && old.get(id) && old.get(id).apiKeyEnc) row.apiKeyEnc = old.get(id).apiKeyEnc;
+        return row;
+      });
+    }
     for (const k of SECRET_KEYS) {
       if (typeof incoming[k] === 'string' && incoming[k].trim()) next[k + 'Enc'] = this._enc(incoming[k].trim());
       if (incoming['clear_' + k]) delete next[k + 'Enc'];

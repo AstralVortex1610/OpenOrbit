@@ -8,6 +8,7 @@ const { Scheduler } = require('./scheduler');
 const { Phone } = require('./phone');
 const { Live } = require('./live');
 const { VoiceCache } = require('./voice-cache');
+const { Updater } = require('./updater');
 // Lets the on-device voice models use several CPU threads.
 app.commandLine.appendSwitch('enable-features', 'SharedArrayBuffer');
 
@@ -18,6 +19,8 @@ const ICON = path.join(__dirname, '..', 'assets', 'icon.png');
 
 const store = new Store(app.getPath('userData'), safeStorage);
 const send = (channel, payload) => { if (win && !win.isDestroyed()) win.webContents.send(channel, payload); };
+const updater = new Updater({ app, send: (c, p) => send(c, p) });
+updater.onQuit = () => { quitting = true; app.quit(); };
 
 function showWindow() {
   if (!win) createWindow();
@@ -70,7 +73,7 @@ const phone = new Phone({
   },
   onMessage: (text, channel) => agent.handleUser(text, [], channel),
 });
-phone.onPaired = () => send('settings:changed');
+phone.onPaired = () => send('settings:changed', { why: 'telegram' });
 agent.onResolved = (id) => phone.answered(id);
 agent.replyToPhone = (text, channel) => {
   const s = store.getSettings();
@@ -137,8 +140,12 @@ ipcMain.handle('settings:save', (_e, s) => {
   registerHotkey();
   ensurePhoneIds();
   phone.restart();
+  updater.startAuto(cur.autoUpdate !== false);
   return store.getSettingsForUI();
 });
+ipcMain.handle('update:state', () => updater.state);
+ipcMain.handle('update:check', () => updater.check(false));
+ipcMain.handle('update:install', () => updater.install());
 ipcMain.handle('phone:test', async () => { try { const n = await phone.test(); return n ? { ok: true, message: `Sent to ${n} channel${n > 1 ? 's' : ''}. Check your phone.` } : { ok: false, message: 'Turn on ntfy or Telegram first (and pair Telegram).' }; } catch (e) { return { ok: false, message: e.message }; } });
 ipcMain.handle('phone:status', () => phone.status);
 ipcMain.handle('phone:newTopic', () => { store.saveSettings({ ntfyTopic: Phone.newTopic() }); phone.restart(); return store.getSettingsForUI(); });
@@ -259,6 +266,7 @@ if (!app.requestSingleInstanceLock()) {
     setInterval(() => agent.panelTick(), 60 * 1000);
     ensurePhoneIds();
     phone.restart();
+    updater.startAuto(store.getSettings().autoUpdate !== false);
   });
   app.on('before-quit', () => {
   if (agent && agent.browser) agent.browser.close(); live.stop(); phone.stopAll(); quitting = true; });

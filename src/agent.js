@@ -358,7 +358,7 @@ ${this._recentTranscript(10) || '(none)'}`;
       if (s.dailyTokenCap && usage.tokensToday >= s.dailyTokenCap) throw new Error(`Daily token cap reached (${usage.tokensToday.toLocaleString()}). Raise it in Settings to keep going.`);
       const msgId = uid();
       const messages = [{ role: 'system', content: system() }, ...context()];
-      const res = await this._complete(model !== s.model ? { ...s, model } : s, messages, msgId, streamToUI, true, ctl, schemas, emit);
+      const res = await this._completeChain(s, model, messages, msgId, streamToUI, ctl, schemas, emit);
       this.store.addUsage(res.tokens);
       if (!res.toolCalls.length) return { text: (res.content || '').trim(), msgId };
 
@@ -533,6 +533,46 @@ ${files}`;
     return h;
   }
 
+  // Main model first (or the lane's fast/voice model), then the backups in order.
+  // A model that hit a limit sits out for 10 minutes, so later calls go straight to one that works.
+  _chain(s, model) {
+    const list = [];
+    const add = (m, baseUrl, apiKey, label) => { if (!m) return; const e = { ...s, model: m, baseUrl: baseUrl || s.baseUrl, apiKey: apiKey || s.apiKey }; const key = e.baseUrl + '|' + m; if (!list.some(x => x.key === key)) list.push({ key, s: e, label: label || m }); };
+    add(model || s.model);
+    add(s.model);
+    for (const b of s.backupModels || []) add(b.model, b.baseUrl, b.apiKey);
+    return list;
+  }
+  static _switchable(err) {
+    if (err.name === 'AbortError') return false;
+    const m = String(err.message || '');
+    if (err.status) return [401, 402, 403, 404, 408, 409, 413, 429].includes(err.status) || err.status >= 500 || /quota|rate.?limit|limit|exceed|insufficient|credit|billing|overload|capacity|unavailable|not found|does not exist/i.test(m);
+    return /fetch failed|ECONN|ETIMEDOUT|ENOTFOUND|socket|network|terminated/i.test(m);
+  }
+  async _completeChain(s, model, messages, msgId, streamToUI, ctl, schemas, emit) {
+    const cool = this._cool || (this._cool = new Map());
+    const all = this._chain(s, model);
+    const now = Date.now();
+    let order = all.filter(x => !(cool.get(x.key) > now));
+    if (!order.length) order = all; // everything is cooling: try them all again anyway
+    let lastErr;
+    for (let i = 0; i < order.length; i++) {
+      const c = order[i];
+      try {
+        const res = await this._complete(c.s, messages, msgId, streamToUI, true, ctl, schemas, emit);
+        const switched = c.key !== all[0].key ? c.key : null;
+        if (switched && this._lastSwitch !== switched) (emit || this.emit)({ type: 'model_switch', model: c.s.model, from: all[0].s.model });
+        this._lastSwitch = switched;
+        return res;
+      } catch (e) {
+        lastErr = e;
+        if (e.partial || !Agent._switchable(e) || i === order.length - 1) throw e;
+        cool.set(c.key, Date.now() + 10 * 60 * 1000);
+      }
+    }
+    throw lastErr;
+  }
+
   async _complete(s, messages, msgId, streamToUI, withUsage = true, ctl, schemas, emit) {
     emit = emit || this.emit;
     ctl = ctl || new AbortController();
@@ -544,7 +584,8 @@ ${files}`;
       if (withUsage && r.status === 400 && /stream_options|include_usage/i.test(errText)) return this._complete(s, messages, msgId, streamToUI, false, ctl, schemas, emit);
       let msg = errText;
       try { const j = JSON.parse(errText); msg = (j.error && (j.error.message || j.error)) || errText; } catch {}
-      throw new Error(`The model returned an error (HTTP ${r.status}): ${String(msg).slice(0, 300)}`);
+      const err = new Error(`The model returned an error (HTTP ${r.status}): ${String(msg).slice(0, 300)}`); err.status = r.status;
+      throw err;
     }
 
     let content = '';
@@ -553,7 +594,7 @@ ${files}`;
     let started = false;
     const decoder = new TextDecoder();
     let buf = '';
-    for await (const chunk of r.body) {
+    try { for await (const chunk of r.body) {
       buf += decoder.decode(chunk, { stream: true });
       let idx;
       while ((idx = buf.indexOf('\n')) >= 0) {
@@ -583,7 +624,7 @@ ${files}`;
           }
         }
       }
-    }
+    } } catch (e) { if (started || content || calls.length) e.partial = true; throw e; }
     if (!tokens) tokens = Math.ceil((JSON.stringify(messages).length + content.length) / 4);
     return { content, toolCalls: calls.filter(Boolean), tokens };
   }

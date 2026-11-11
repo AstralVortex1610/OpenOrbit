@@ -677,3 +677,16 @@ body.in-project .scope-bar { display: flex; animation: rise .35s var(--ease); }
 .vc-row b { grid-row: span 2; }
 .vc-row small { grid-column: 2; color: var(--muted); overflow-wrap: anywhere; }
 .vc-row.ok b { color: var(--ok); } .vc-row.bad b { color: var(--danger); } .vc-row.run b { color: var(--accent, #c4673a); }
+
+/* backup models */
+.backups { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line, rgba(127,127,127,.18)); font-size: 13px; color: var(--text-2); }
+.backups small { display: block; margin: 4px 0 8px; line-height: 1.45; }
+.backup-row { display: grid; grid-template-columns: 22px 1.2fr 1.2fr 1fr auto; gap: 8px; align-items: center; margin: 8px 0; }
+.backup-row .n { font-weight: 600; color: var(--accent); text-align: center; }
+.backup-row input { width: 100%; min-width: 0; background: var(--bg); border: 1px solid var(--line, rgba(127,127,127,.25)); color: var(--text); border-radius: 9px; padding: 8px 10px; font: inherit; font-size: 13px; }
+.backup-row input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.backup-row button { background: none; border: 0; color: var(--text-2); font-size: 18px; cursor: pointer; padding: 0 6px; }
+.backup-row button:hover { color: var(--danger); }
+/* update bar */
+.update-bar { position: fixed; top: 46px; left: 50%; transform: translate(-50%, -16px); display: flex; gap: 12px; align-items: center; background: var(--surface, var(--bg)); border: 1px solid var(--accent); color: var(--text); padding: 8px 10px 8px 16px; border-radius: 99px; font-size: 13.5px; box-shadow: 0 10px 30px rgba(0,0,0,.25); opacity: 0; pointer-events: none; transition: all .35s var(--ease); z-index: 60; }
+.update-bar.show { opacity: 1; pointer-events: auto; transform: translate(-50%, 0); }

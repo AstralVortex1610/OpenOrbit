@@ -276,6 +276,11 @@
             <label>Fast model for background tasks <span class="muted">(optional)</span><input id="s-fastModel" list="modelList" placeholder="Same as main model" /></label>
             <label>Model for voice tasks <span class="muted">(pick a fast one)</span><input id="s-voiceModel" list="modelList" placeholder="Fast model, else main model" /></label>
             <label>Voice transcription model<input id="s-transcribeModel" placeholder="whisper-1" /></label>
+            <div class="backups">
+              <b>Backup models</b> <small class="muted">If a model hits its limit or goes down, Orbit switches to the next one by itself and carries on. Leave base URL and key empty to use the ones above, or fill them to use another provider.</small>
+              <div id="backupList"></div>
+              <button class="ghost sm" id="addBackup" type="button">+ Add a backup model</button>
+            </div>
             <div class="row">
               <button class="ghost" id="testBtn">Test connection</button>
               <span id="testResult" class="muted"></span>
@@ -480,6 +485,13 @@
             <button class="ghost danger-btn" id="clearThread">Clear chat history</button>
           </div>
 
+          <div class="card">
+            <h3>Updates</h3>
+            <p class="muted">Orbit updates itself from GitHub. Your settings, chats, memory, projects and tasks stay exactly as they are.</p>
+            <label class="toggle"><input type="checkbox" id="s-autoUpdate" /><span></span>Check for updates automatically</label>
+            <div class="row"><button class="ghost" id="checkUpdate" type="button">Check for updates</button><button class="primary" id="installUpdate" type="button" style="display:none">Update now</button><span id="updateState" class="muted"></span></div>
+          </div>
+
           <div class="card about">
             <img src="wordmark.png" alt="Orbit" class="wordmark" />
             <p class="muted">Your personal agent. Built for Affan.</p>
@@ -527,6 +539,7 @@
     </form>
   </div>
 
+  <div class="update-bar" id="updateBar"><span id="updateBarText"></span><button class="primary sm" id="updateBarGo" type="button">Update now</button><button class="link-btn" id="updateBarLater" type="button">Later</button></div>
   <div class="toast" id="toast"></div>
   <script src="vendor/vosk.js"></script>
   <script src="wake.js"></script>

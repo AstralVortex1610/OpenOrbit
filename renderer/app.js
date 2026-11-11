@@ -144,6 +144,7 @@
   }
   const GLOBAL = new Set(['tasks_changed', 'memory_changed', 'speak', 'panels_changed', 'projects_changed', 'updates_changed']);
   api.on('agent:event', (e) => {
+    if (e.type === 'model_switch') { toast(`${e.from} hit a limit, so Orbit switched to ${e.model}.`); return; }
     if (e.type === 'approval' || e.type === 'question') pendingCards.set(e.id, { scope: e.project || 'main', e });
     if (e.type === 'approval_done' || e.type === 'question_done') pendingCards.delete(e.id);
     if (GLOBAL.has(e.type)) { window.dispatchEvent(new CustomEvent('orbit-hub', { detail: e })); if (!['panels_changed', 'projects_changed', 'updates_changed'].includes(e.type)) handleEvent(e); return; }
@@ -501,8 +502,15 @@
 
   // ---------- settings ----------
   const FIELDS = ['orbitVoice', 'orbitStt', 'orbitTts', 'orbitPhononVoice', 'orbitWinVoice', 'orbitPauseMs', 'liveEngine', 'liveGeminiVoice', 'liveOpenaiVoice', 'baseUrl', 'model', 'fastModel', 'voiceModel', 'browserChannel', 'phoneWhen', 'phoneIdleMinutes', 'ntfyServer', 'transcribeModel', 'userName', 'approvalMode', 'dailyTokenCap', 'maxSteps', 'hotkey', 'maxWorkers', 'imageModel', 'imageBaseUrl', 'googleClientId'];
-  const TOGGLES = ['talkFirst', 'autoCall', 'orbitGpu', 'wakeOpensLive', 'voiceReplies', 'closeToTray', 'startWithWindows', 'wakeWord', 'ntfyEnabled', 'telegramEnabled'];
+  const TOGGLES = ['autoUpdate', 'talkFirst', 'autoCall', 'orbitGpu', 'wakeOpensLive', 'voiceReplies', 'closeToTray', 'startWithWindows', 'wakeWord', 'ntfyEnabled', 'telegramEnabled'];
+  // Edits you haven't saved yet survive any refresh of this screen (a new ntfy topic,
+  // Telegram pairing, Google connect...). Before, those refreshes wiped the whole form.
+  const dirty = new Set();
+  let backupsDirty = false;
+  $('#view-settings').addEventListener('input', (e) => { if (e.target.id) dirty.add(e.target.id); if (e.target.closest('#backupList')) backupsDirty = true; });
+  $('#view-settings').addEventListener('change', (e) => { if (e.target.id) dirty.add(e.target.id); if (e.target.closest('#backupList')) backupsDirty = true; });
   async function loadSettings() {
+    const keep = [...dirty].map(id => { const el = document.getElementById(id); return el && (el.type === 'checkbox' ? [el, 'checked', el.checked] : [el, 'value', el.value]); }).filter(Boolean);
     settings = await api.getSettings();
     FIELDS.forEach(f => { const el = $('#s-' + f); if (!el) return; el.value = settings[f] ?? ''; if (el.tagName === 'SELECT' && el.selectedIndex < 0) el.selectedIndex = 0; });
     TOGGLES.forEach(f => { $('#s-' + f).checked = !!settings[f]; });
@@ -529,8 +537,56 @@
     $('#tgState').textContent = !settings.hasTelegramToken ? 'No bot token yet.' : settings.telegramChatId ? 'Paired with your Telegram. ' : 'Token saved. Waiting for you to send the pairing code to your bot.';
     $('#tgState').style.color = settings.telegramChatId ? 'var(--ok)' : '';
     if (settings.telegramChatId && !$('#unpairTg')) { const b = document.createElement('button'); b.id = 'unpairTg'; b.className = 'link-btn'; b.textContent = 'Unpair'; b.onclick = async () => { await api.phoneUnpairTelegram(); loadSettings(); }; $('#tgState').appendChild(b); }
+    if (!backupsDirty) renderBackups(settings.backupModels || []);
+    for (const [el, prop, v] of keep) el[prop] = v;
+    if (keep.length) syncLiveEngine();
     syncWake();
   }
+  // ---------- backup models ----------
+  function renderBackups(list) {
+    const box = $('#backupList'); box.innerHTML = '';
+    list.forEach((b) => addBackupRow(b));
+  }
+  function addBackupRow(b = {}) {
+    const box = $('#backupList');
+    const row = document.createElement('div'); row.className = 'backup-row'; row.dataset.id = b.id || '';
+    row.innerHTML = `<span class="n"></span><input class="bm-model" list="modelList" placeholder="Model name" /><input class="bm-base" placeholder="Base URL (same as above)" /><input class="bm-key" type="password" autocomplete="off" placeholder="${b.hasKey ? 'Key saved (' + escapeHtml(b.keyPreview) + ')' : 'API key (same as above)'}" /><button type="button" title="Remove">×</button>`;
+    row.querySelector('.bm-model').value = b.model || '';
+    row.querySelector('.bm-base').value = b.baseUrl || '';
+    row.querySelector('button').onclick = () => { row.remove(); backupsDirty = true; numberBackups(); };
+    box.appendChild(row); numberBackups();
+    return row;
+  }
+  function numberBackups() { $$('#backupList .backup-row').forEach((r, i) => (r.querySelector('.n').textContent = i + 1)); }
+  $('#addBackup').onclick = () => { backupsDirty = true; addBackupRow().querySelector('.bm-model').focus(); };
+  function readBackups() {
+    return $$('#backupList .backup-row').map(r => ({ id: r.dataset.id || undefined, model: r.querySelector('.bm-model').value.trim(), baseUrl: r.querySelector('.bm-base').value.trim(), apiKey: r.querySelector('.bm-key').value.trim() })).filter(b => b.model);
+  }
+  // ---------- updates ----------
+  function showUpdate(st) {
+    if (!st) return;
+    const el = $('#updateState'), go = $('#installUpdate');
+    el.style.color = st.status === 'error' ? 'var(--danger)' : st.status === 'latest' ? 'var(--ok)' : '';
+    el.textContent = st.status === 'checking' ? 'Checking…'
+      : st.status === 'latest' ? `You're on the latest version (${st.current}).`
+      : st.status === 'available' ? `Orbit ${st.latest} is ready to install (you have ${st.current}).`
+      : st.status === 'downloading' ? `Downloading ${st.latest}… ${st.progress || 0}%`
+      : st.status === 'installing' ? 'Installing. Orbit will close and reopen in about a minute.'
+      : st.status === 'error' ? st.error : '';
+    go.style.display = st.status === 'available' || (st.status === 'error' && st.url) ? '' : 'none';
+    const bar = $('#updateBar');
+    if (st.status === 'available' && !showUpdate.later) { $('#updateBarText').textContent = `Orbit ${st.latest} is out.`; $('#updateBarGo').style.display = ''; bar.classList.add('show'); }
+    else if (st.status === 'downloading' && bar.classList.contains('show')) { $('#updateBarText').textContent = `Downloading ${st.latest}… ${st.progress || 0}%`; $('#updateBarGo').style.display = 'none'; }
+    else if (st.status === 'installing') { $('#updateBarText').textContent = 'Installing. Orbit reopens in a minute.'; $('#updateBarGo').style.display = 'none'; bar.classList.add('show'); }
+    else if (st.status !== 'downloading') bar.classList.remove('show');
+  }
+  api.on('update:state', showUpdate);
+  api.update.state().then(showUpdate);
+  $('#checkUpdate').onclick = async () => showUpdate(await api.update.check());
+  const doUpdate = async () => { await saveSettings(); showUpdate(await api.update.install()); };
+  $('#installUpdate').onclick = doUpdate;
+  $('#updateBarGo').onclick = doUpdate;
+  $('#updateBarLater').onclick = () => { showUpdate.later = true; $('#updateBar').classList.remove('show'); };
   async function fillWinVoices() {
     const sel = $('#s-orbitWinVoice'); if (!sel || !window.OrbitVoice || sel.dataset.filled) return;
     const list = await OrbitVoice.winVoiceList(); if (!list.length) return;
@@ -604,7 +660,7 @@
   $('#copyTopic').onclick = () => { navigator.clipboard.writeText(settings.ntfyTopic || ''); toast('Topic copied'); };
   $('#newTopic').onclick = async () => { await api.phoneNewTopic(); await loadSettings(); toast('New topic made. Re-subscribe on your phone.'); };
   $('#phoneTest').onclick = async () => { await saveSettings(); $('#phoneResult').textContent = 'Sending…'; const r = await api.phoneTest(); $('#phoneResult').textContent = r.message; $('#phoneResult').style.color = r.ok ? 'var(--ok)' : 'var(--danger)'; };
-  api.on('settings:changed', () => { if ($('#view-settings').classList.contains('active')) loadSettings(); toast('Telegram paired'); });
+  api.on('settings:changed', (p) => { loadSettings(); if (p && p.why === 'telegram') toast('Telegram paired'); });
 
   // ---------- Hey Orbit ----------
   function syncWake() {
@@ -644,7 +700,7 @@
   }
   $('#preset').onchange = (e) => {
     if (!e.target.value) return;
-    $('#s-baseUrl').value = e.target.value; $('#s-model').value = '';
+    $('#s-baseUrl').value = e.target.value; $('#s-model').value = ''; dirty.add('s-baseUrl'); dirty.add('s-model');
     $('#modelList').innerHTML = '';
     $('#modelState').textContent = 'Paste this provider\'s key, then tap List models.';
   };
@@ -664,12 +720,14 @@
     FIELDS.forEach(f => { const el = $('#s-' + f); if (el) out[f] = el.type === 'number' ? Number(el.value) : el.value.trim(); });
     TOGGLES.forEach(f => (out[f] = $('#s-' + f).checked));
     const key = $('#s-apiKey').value.trim(); if (key) out.apiKey = key;
+    out.backupModels = readBackups();
     for (const k of ['liveGeminiKey', 'liveOpenaiKey', 'googleClientSecret', 'netlifyToken', 'imageApiKey']) { const v = $('#k-' + k).value.trim(); if (v) out[k] = v; }
     const prevTts = settings.orbitTts || 'auto', prevStt = settings.orbitStt || 'moonshine';
     settings = await api.saveSettings(out);
     // Switching who speaks (or how Orbit hears) reloads the voice next time it's needed.
     if (window.OrbitVoice && !(window.OrbitLive && OrbitLive.on) && ((settings.orbitTts || 'auto') !== prevTts || (settings.orbitStt || 'moonshine') !== prevStt)) OrbitVoice.unload();
     if (window.OrbitVoice) { OrbitVoice.setPhononVoice(settings.orbitPhononVoice || 'Easton'); OrbitVoice.setWinVoice(settings.orbitWinVoice || ''); OrbitVoice.setPauseMs(Number(settings.orbitPauseMs) || 900); }
+    dirty.clear(); backupsDirty = false;
     await loadSettings(); greeting();
   }
   $('#saveSettings').onclick = async () => { await saveSettings(); toast('Settings saved'); };

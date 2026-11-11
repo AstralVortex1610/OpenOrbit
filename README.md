@@ -18,8 +18,10 @@
 2. Unzip it and run `Orbit.exe`. It isn't code-signed yet, so if SmartScreen shows a warning, click **More info → Run anyway**.
 3. Open **Settings → Brain**, enter a base URL, an API key and a model, then click **Test connection**.
 
+**Updating:** from 0.9.0 on, Orbit updates itself. When a new version is out it offers **Update now**, then closes and reopens on the new version (or use **Settings → Updates**). Your settings, chats, memory, projects and tasks live in `%APPDATA%\Orbit`, so they're kept.
+
 ## What it does
-- **Any model.** Presets for US, Chinese, EU and local labs. Any OpenAI-compatible endpoint works, including Ollama and LM Studio.
+- **Any model, with backups.** Presets for US, Chinese, EU and local labs. Any OpenAI-compatible endpoint works, including Ollama and LM Studio. Add backup models and Orbit switches to the next one by itself when a model hits its limit.
 - **Uses your computer.** Runs commands, reads and writes files, drives your installed Edge or Chrome, and clicks through Windows apps with UI Automation. It asks before anything consequential.
 - **Works in parallel.** Background workers run several tasks at once, and Orbit still answers you while it's busy.
 - **Projects.** Each project gets its own chat, brief and files.

@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld('orbit', {
   phoneTest: () => ipcRenderer.invoke('phone:test'),
   phoneStatus: () => ipcRenderer.invoke('phone:status'),
   phoneNewTopic: () => ipcRenderer.invoke('phone:newTopic'),
+  update: { state: () => ipcRenderer.invoke('update:state'), check: () => ipcRenderer.invoke('update:check'), install: () => ipcRenderer.invoke('update:install') },
   phoneUnpairTelegram: () => ipcRenderer.invoke('phone:unpairTelegram'),
   getWakeModel: () => ipcRenderer.invoke('wake:model'),
   wakeHeard: () => ipcRenderer.invoke('wake:heard'),
@@ -83,7 +84,7 @@ contextBridge.exposeInMainWorld('orbit', {
     close: () => ipcRenderer.invoke('win:close'),
   },
   on: (channel, fn) => {
-    const ok = ['agent:event', 'tasks:changed', 'ui:focusInput', 'settings:changed', 'live:event', 'voice:progress'];
+    const ok = ['agent:event', 'tasks:changed', 'ui:focusInput', 'settings:changed', 'live:event', 'voice:progress', 'update:state'];
     if (!ok.includes(channel)) return;
     ipcRenderer.on(channel, (_e, payload) => fn(payload));
   },

@@ -1,0 +1,40 @@
+// Settings: typing the brain settings, then "Make a new private topic" (or Telegram pairing) must NOT wipe them.
+// Run: xvfb-run -a npx electron --no-sandbox test/settings-keep-e2e.js
+const { app, BrowserWindow } = require('electron');
+const path = require('path'); const fs = require('fs'); const os = require('os');
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'orbit-set-'));
+app.setPath('userData', tmp); app.disableHardwareAcceleration();
+fs.writeFileSync(path.join(tmp, 'settings.json'), JSON.stringify({ autoCall: false, talkFirst: false, autoUpdate: false }));
+require('../src/main.js');
+const wait = (ms) => new Promise(r => setTimeout(r, ms));
+app.whenReady().then(async () => {
+  await wait(2500);
+  const win = BrowserWindow.getAllWindows()[0]; win.setSize(1280, 820); win.show(); const js = (s) => win.webContents.executeJavaScript(s);
+  const fail = (m) => { console.error('FAIL', m); app.exit(1); };
+  await js(`document.querySelector('[data-view=settings]').click()`); await wait(600);
+  const type = (id, v) => js(`(() => { const e = document.getElementById('${id}'); e.value = ${JSON.stringify(v)}; e.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  await type('s-baseUrl', 'https://openrouter.ai/api/v1'); await type('s-apiKey', 'sk-or-typed'); await type('s-model', 'qwen/qwen3-coder');
+  await js(`document.querySelector('#addBackup').click()`);
+  await js(`(() => { const e = document.querySelector('#backupList .bm-model'); e.value = 'deepseek/deepseek-v3'; e.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  const before = await js(`document.getElementById('ntfyTopicShow').textContent`);
+  await js(`document.querySelector('#newTopic').click()`); await wait(900);
+  const r = await js(`(() => { const s = (i) => document.getElementById(i).value; const b = document.querySelector('#backupList .bm-model'); return { base: s('s-baseUrl'), key: s('s-apiKey'), model: s('s-model'), backup: b && b.value, topic: document.getElementById('ntfyTopicShow').textContent }; })()`);
+  console.log(r);
+  if (r.base !== 'https://openrouter.ai/api/v1' || r.key !== 'sk-or-typed' || r.model !== 'qwen/qwen3-coder' || r.backup !== 'deepseek/deepseek-v3') return fail('new topic wiped unsaved settings');
+  if (r.topic === before) return fail('topic did not change');
+  console.log('ok  new topic keeps unsaved edits');
+  await js(`document.querySelector('#saveSettings').click()`); await wait(900);
+  const saved = JSON.parse(fs.readFileSync(path.join(tmp, 'settings.json'), 'utf8'));
+  if (saved.model !== 'qwen/qwen3-coder' || saved.baseUrl !== 'https://openrouter.ai/api/v1' || !saved.apiKeyEnc || saved.backupModels[0].model !== 'deepseek/deepseek-v3') return fail('save: ' + JSON.stringify(saved).slice(0, 300));
+  console.log('ok  save stores brain + backup');
+  await js(`document.querySelector('#newTopic').click()`); await wait(900);
+  const after = await js(`document.getElementById('s-model').value + '|' + document.querySelectorAll('#backupList .backup-row').length + '|' + document.getElementById('updateState').textContent`);
+  if (!after.startsWith('qwen/qwen3-coder|1')) return fail('after save: ' + after);
+  console.log('ok  saved settings stay after another new topic');
+  await win.webContents.capturePage().then(img => fs.writeFileSync(path.join(__dirname, 'shot-settings-keep.png'), img.toPNG()));
+  await js(`document.querySelector('#addBackup').scrollIntoView({block:'center'})`); await wait(300);
+  await win.webContents.capturePage().then(img => fs.writeFileSync(path.join(__dirname, 'shot-backups.png'), img.toPNG()));
+  await js(`document.querySelector('#checkUpdate').scrollIntoView({block:'center'})`); await wait(300);
+  await win.webContents.capturePage().then(img => fs.writeFileSync(path.join(__dirname, 'shot-updates.png'), img.toPNG()));
+  console.log('PASS settings-keep-e2e'); app.exit(0);
+});

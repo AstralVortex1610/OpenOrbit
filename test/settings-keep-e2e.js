@@ -31,6 +31,19 @@ app.whenReady().then(async () => {
   const after = await js(`document.getElementById('s-model').value + '|' + document.querySelectorAll('#backupList .backup-row').length + '|' + document.getElementById('updateState').textContent`);
   if (!after.startsWith('qwen/qwen3-coder|1')) return fail('after save: ' + after);
   console.log('ok  saved settings stay after another new topic');
+  // Everything else on the ntfy/Telegram card, then a restart (fresh Store from disk)
+  await js(`(() => { const t = document.getElementById('s-ntfyEnabled'); t.click(); })()`);
+  await js(`(() => { document.querySelector('.phone-channel details').open = true; const e = document.getElementById('s-ntfyServer'); e.value = 'https://ntfy.sh'; e.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  await type('s-telegramToken', '123456:ABCdef'); await js(`document.getElementById('s-telegramEnabled').click()`);
+  await js(`document.querySelector('#phoneTest').click()`); await wait(2500);
+  await js(`document.querySelector('#newTopic').click()`); await wait(800);
+  await js(`document.querySelector('[data-view=chat]').click()`); await wait(300); await js(`document.querySelector('[data-view=settings]').click()`); await wait(600);
+  const ui = await js(`document.getElementById('s-model').value + '|' + document.getElementById('s-baseUrl').value + '|' + document.getElementById('keyState').textContent + '|' + document.getElementById('tgState').textContent`);
+  console.log(ui);
+  if (!ui.startsWith('qwen/qwen3-coder|https://openrouter.ai/api/v1|Saved')) return fail('ntfy/telegram flow reset the brain: ' + ui);
+  const { Store } = require('../src/store'); const fresh = new Store(tmp, null).getSettings();
+  if (fresh.model !== 'qwen/qwen3-coder' || !fresh.apiKey || !fresh.ntfyEnabled || !fresh.telegramToken) return fail('after restart: ' + JSON.stringify({ m: fresh.model, k: !!fresh.apiKey, n: fresh.ntfyEnabled, t: !!fresh.telegramToken }));
+  console.log('ok  ntfy toggle, server, test ping, telegram token, new topic, view switch, restart: brain kept');
   await win.webContents.capturePage().then(img => fs.writeFileSync(path.join(__dirname, 'shot-settings-keep.png'), img.toPNG()));
   await js(`document.querySelector('#addBackup').scrollIntoView({block:'center'})`); await wait(300);
   await win.webContents.capturePage().then(img => fs.writeFileSync(path.join(__dirname, 'shot-backups.png'), img.toPNG()));

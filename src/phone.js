@@ -22,6 +22,11 @@ class Phone {
   s() { return this.store.getSettings(); }
 
   restart() {
+    // Only restart what actually changed, so saving Settings doesn't drop a live connection.
+    const s0 = this.s();
+    const key = JSON.stringify([s0.ntfyEnabled, s0.ntfyTopic, s0.ntfyServer, s0.ntfyToken, s0.telegramEnabled, s0.telegramToken]);
+    if (key === this._key && (this.ntfyAbort || this.tgRunning)) return;
+    this._key = key;
     this.stopAll();
     const s = this.s();
     if (s.ntfyEnabled && s.ntfyTopic) this._listenNtfy();
@@ -30,6 +35,8 @@ class Phone {
   stopAll() {
     if (this.ntfyAbort) { this.ntfyAbort.abort(); this.ntfyAbort = null; }
     this.tgRunning = false;
+    this.tgGen = (this.tgGen || 0) + 1; // any older poll loop sees a new generation and exits
+    if (this.tgAbort) { this.tgAbort.abort(); this.tgAbort = null; }
     this.status = { ntfy: 'off', telegram: 'off' };
   }
 
@@ -100,7 +107,7 @@ class Phone {
             let msg = ev.message || '';
             let askId = null;
             try { const j = JSON.parse(msg); if (j && j.orbitAsk) { askId = j.orbitAsk; msg = j.answer; } } catch {}
-            this._route(msg, 'ntfy', askId);
+            try { this._route(msg, 'ntfy', askId); } catch (e) { this.log('ntfy route: ' + e.message); }
           }
         }
       } catch (e) {
@@ -113,9 +120,9 @@ class Phone {
   }
 
   // ---------------- Telegram ----------------
-  _tg(method, body) {
+  _tg(method, body, signal) {
     const token = this.s().telegramToken;
-    return fetch(`https://api.telegram.org/bot${token}/${method}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) })
+    return fetch(`https://api.telegram.org/bot${token}/${method}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}), signal })
       .then(r => r.json());
   }
 
@@ -133,10 +140,13 @@ class Phone {
 
   async _pollTelegram() {
     this.tgRunning = true;
+    const gen = this.tgGen = (this.tgGen || 0) + 1;
+    const ctrl = this.tgAbort = new AbortController();
     let delay = 2000;
-    while (this.tgRunning) {
+    while (this.tgRunning && gen === this.tgGen) {
       try {
-        const j = await this._tg('getUpdates', { offset: this.tgOffset, timeout: 50, allowed_updates: ['message', 'callback_query'] });
+        const j = await this._tg('getUpdates', { offset: this.tgOffset, timeout: 50, allowed_updates: ['message', 'callback_query'] }, ctrl.signal);
+        if (gen !== this.tgGen) break;
         if (!j.ok) throw new Error(j.description || 'getUpdates failed');
         this.status.telegram = 'listening'; delay = 2000;
         for (const u of j.result) {
@@ -144,6 +154,7 @@ class Phone {
           await this._handleTelegram(u);
         }
       } catch (e) {
+        if (ctrl.signal.aborted || gen !== this.tgGen) break;
         this.status.telegram = 'reconnecting'; this.log('telegram: ' + e.message);
         await new Promise(r => setTimeout(r, delay));
         delay = Math.min(delay * 2, 60000);

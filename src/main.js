@@ -158,7 +158,7 @@ function ensurePhoneIds() {
   const patch = {};
   if (!s.ntfyTopic) patch.ntfyTopic = Phone.newTopic();
   if (!s.telegramPairCode) patch.telegramPairCode = Phone.newPairCode();
-  if (Object.keys(patch).length) store.saveSettings(patch);
+  if (Object.keys(patch).length) { try { store.saveSettings(patch); } catch (e) { console.error(e); } }
 }
 ipcMain.handle('live:status', () => live.status());
 ipcMain.handle('live:start', async () => { try { return { ok: true, ...(await live.start()) }; } catch (e) { return { ok: false, error: e.message }; } });

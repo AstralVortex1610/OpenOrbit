@@ -52,6 +52,7 @@ const DEFAULT_SETTINGS = {
   backupModels: [], // [{ id, model, baseUrl, apiKeyEnc }]: tried in order when the main model hits a limit
   autoUpdate: true,
 };
+function sleepSync(ms) { try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } catch {} }
 const SECRET_KEYS = ['liveGeminiKey', 'liveOpenaiKey', 'googleClientSecret', 'googleRefresh', 'netlifyToken', 'imageApiKey'];
 
 const DEFAULT_TASKS = [
@@ -97,18 +98,49 @@ class Store {
   }
 
   _file(name) { return path.join(this.dir, name); }
+  // Windows can briefly lock a file (antivirus, search indexer, backup tools). A failed read
+  // must never look like an empty file, or the next save writes a tiny patch over everything.
   _read(name, fallback) {
-    try { return JSON.parse(fs.readFileSync(this._file(name), 'utf8')); } catch { return fallback; }
+    const p = this._file(name);
+    for (let i = 0; i < 6; i++) {
+      try { return JSON.parse(fs.readFileSync(p, 'utf8')); }
+      catch (e) {
+        if (e.code === 'ENOENT') break;
+        if (i < 5) { sleepSync(40 * (i + 1)); continue; }
+        try { return JSON.parse(fs.readFileSync(p + '.bak', 'utf8')); } catch {}
+        const err = new Error(`Couldn't read ${name}: ${e.message}`); err.unreadable = true; throw err;
+      }
+    }
+    try { return JSON.parse(fs.readFileSync(p + '.bak', 'utf8')); } catch {}
+    return fallback;
   }
   _write(name, data) {
     const p = this._file(name);
-    fs.writeFileSync(p + '.tmp', JSON.stringify(data, null, 2));
-    fs.renameSync(p + '.tmp', p);
+    const text = JSON.stringify(data, null, 2);
+    let lastErr;
+    for (let i = 0; i < 6; i++) {
+      try {
+        fs.writeFileSync(p + '.tmp', text);
+        fs.renameSync(p + '.tmp', p);
+        lastErr = null; break;
+      } catch (e) { lastErr = e; sleepSync(40 * (i + 1)); }
+    }
+    if (lastErr) fs.writeFileSync(p, text); // last resort: write in place
+    try { fs.writeFileSync(p + '.bak', text); } catch {}
   }
+  _raw(forWrite) {
+    // Settings are owned by this process: read once, then keep the last good copy in memory.
+    if (!this._settingsRaw) {
+      try { this._settingsRaw = this._read('settings.json', {}); }
+      catch (e) { if (!forWrite) { this._log('read failed: ' + e.message); return {}; } throw e; } // retried next time; never saved over
+    }
+    return this._settingsRaw;
+  }
+  _log(line) { try { fs.appendFileSync(this._file('settings.log'), `[${new Date().toISOString()}] ${line}\n`); } catch {} }
 
   // ----- settings -----
   getSettings() {
-    const s = { ...DEFAULT_SETTINGS, ...this._read('settings.json', {}) };
+    const s = { ...DEFAULT_SETTINGS, ...this._raw() };
     s.apiKey = '';
     if (s.apiKeyEnc) {
       try {
@@ -138,7 +170,7 @@ class Store {
     return { ...s, hasKey, keyPreview: masked };
   }
   saveSettings(incoming) {
-    const cur = this._read('settings.json', {});
+    const cur = this._raw(true);
     const next = { ...cur };
     for (const k of Object.keys(DEFAULT_SETTINGS)) if (k !== 'backupModels' && incoming[k] !== undefined) next[k] = incoming[k];
     if (typeof incoming.apiKey === 'string' && incoming.apiKey.trim()) {
@@ -165,7 +197,11 @@ class Store {
       next.telegramTokenEnc = this._enc(incoming.telegramToken.trim());
       next.telegramChatId = ''; // a new bot needs pairing again
     }
+    const lost = ['baseUrl', 'model', 'apiKeyEnc'].filter(k => cur[k] && !next[k]);
+    if (lost.length && !incoming.clearKey) this._log(`warning: save would drop ${lost.join(', ')}; keeping them`), lost.forEach(k => (next[k] = cur[k]));
+    this._settingsRaw = next;
     this._write('settings.json', next);
+    this._log('saved ' + Object.keys(incoming).filter(k => !/key|token|secret|refresh/i.test(k)).join(', '));
   }
 
   // ----- thread -----

@@ -1,7 +1,7 @@
 {
   "name": "orbit",
   "productName": "Orbit",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "Orbit, your personal desktop agent.",
   "main": "src/main.js",
   "author": "Affan Mohammed",

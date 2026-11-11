@@ -721,9 +721,11 @@
     TOGGLES.forEach(f => (out[f] = $('#s-' + f).checked));
     const key = $('#s-apiKey').value.trim(); if (key) out.apiKey = key;
     out.backupModels = readBackups();
+    const tg = $('#s-telegramToken').value.trim(); if (tg) out.telegramToken = tg;
     for (const k of ['liveGeminiKey', 'liveOpenaiKey', 'googleClientSecret', 'netlifyToken', 'imageApiKey']) { const v = $('#k-' + k).value.trim(); if (v) out[k] = v; }
     const prevTts = settings.orbitTts || 'auto', prevStt = settings.orbitStt || 'moonshine';
-    settings = await api.saveSettings(out);
+    try { settings = await api.saveSettings(out); }
+    catch (e) { toast(`Couldn't save settings: ${String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`); throw e; }
     // Switching who speaks (or how Orbit hears) reloads the voice next time it's needed.
     if (window.OrbitVoice && !(window.OrbitLive && OrbitLive.on) && ((settings.orbitTts || 'auto') !== prevTts || (settings.orbitStt || 'moonshine') !== prevStt)) OrbitVoice.unload();
     if (window.OrbitVoice) { OrbitVoice.setPhononVoice(settings.orbitPhononVoice || 'Easton'); OrbitVoice.setWinVoice(settings.orbitWinVoice || ''); OrbitVoice.setPauseMs(Number(settings.orbitPauseMs) || 900); }

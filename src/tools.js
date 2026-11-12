@@ -83,6 +83,19 @@ const TOOL_SCHEMAS = [
   fn('calendar_delete', 'Delete a Google Calendar event by id.', { id: { type: 'string' } }, ['id']),
   fn('generate_image', 'Make an image from a text prompt. Saves a PNG to Pictures\\Orbit and shows it in the chat.', { prompt: { type: 'string' }, size: { type: 'string', enum: ['1024x1024', '1536x1024', '1024x1536'] }, name: { type: 'string', description: 'File name without extension.' } }, ['prompt']),
   fn('publish_site', 'Publish a folder with an index.html (a page you wrote with write_file) as a live public website on Netlify, and return its link. Publishing the same name again updates it.', { folder: { type: 'string', description: 'Folder path; relative paths are in Orbit\'s working folder.' }, name: { type: 'string', description: 'Short site name, letters and dashes.' } }, ['folder', 'name']),
+  fn('make_file', 'Make a finished file from your research and show it in the chat as a card the user can open or save. Formats: pdf (default, a designed report), pptx (slides: each ## heading becomes a slide, tables get their own slide), docx (Word), html, md, txt, csv (from the first markdown table, or rows). Research first, then write the whole thing as markdown in content: ## sections, short paragraphs, bullet lists and | tables |. Put source links in sources, not in the body.', {
+    format: { type: 'string', enum: ['pdf', 'pptx', 'docx', 'html', 'md', 'txt', 'csv'] },
+    title: { type: 'string' },
+    subtitle: { type: 'string', description: 'One line under the title.' },
+    kind: { type: 'string', description: 'Small label on the cover, e.g. Research report, Comparison, Brief, Study notes, Osint report.' },
+    summary: { type: 'string', description: 'The answer in two or three sentences, shown first.' },
+    content: { type: 'string', description: 'The body in markdown.' },
+    sources: { type: 'array', items: { type: 'string' }, description: 'Source URLs, in the order cited.' },
+    rows: { type: 'array', items: { type: 'array', items: { type: 'string' } }, description: 'CSV only: rows including the header row.' },
+    filename: { type: 'string', description: 'Without extension. Defaults to the title.' },
+  }, ['title', 'content']),
+  fn('view_image', 'Look at an image file on this computer or an image URL. With a question, a vision model answers it; otherwise the image is shown to you.', { path: { type: 'string' }, question: { type: 'string' } }, ['path']),
+  fn('connectors_list', 'List the user\'s connectors (MCP servers and custom APIs) with their status and tools.', {}),
   fn('panel_create', 'Put a live panel on the user\'s Home screen: something glanceable that changes over time (a price, weather, exam countdown, unread mail, GitHub trending, a score). Orbit fills it with real values and refreshes it on its own.', {
     title: { type: 'string', description: '2-4 words.' },
     what: { type: 'string', description: 'Exactly what the panel shows and where the values come from, with every detail the user gave (city, ticker, date, account).' },
@@ -117,6 +130,14 @@ function htmlToText(html) {
 }
 
 const { Browser } = require('./browser');
+const docs = require('./docs');
+const { buildOsint, OSINT_SCHEMAS } = require('./osint');
+
+// Orbit's own tools plus whatever is switched on: Osint (beta) and the user's connectors.
+function allSchemas(agent) {
+  const s = agent.store.getSettings();
+  return [...TOOL_SCHEMAS, ...(s.osintBeta ? OSINT_SCHEMAS : []), ...(agent.connectors ? agent.connectors.schemas() : [])];
+}
 const { WinUI } = require('./winui');
 
 function buildTools(agent, lane = { id: 'main' }) {
@@ -137,6 +158,33 @@ function buildTools(agent, lane = { id: 'main' }) {
   };
 
   const tools = {
+    async make_file(a) {
+      const { format, data } = await docs.render({ ...a });
+      const dir = lane.project && agent.hub ? agent.hub.filesDir(lane.project) : path.join(os.homedir(), 'Documents', 'Orbit');
+      fs.mkdirSync(dir, { recursive: true });
+      const base = String(a.filename || a.title).replace(/[<>:"/\\|?*\x00-\x1f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Orbit file';
+      let file = path.join(dir, `${base}.${format}`); let n = 2;
+      while (fs.existsSync(file)) file = path.join(dir, `${base} (${n++}).${format}`);
+      fs.writeFileSync(file, data);
+      const info = { path: file, name: path.basename(file), format, size: data.length, title: a.title };
+      if (lane.project) agent.emit({ type: 'projects_changed', project: lane.project });
+      return { text: `Saved ${info.name} (${(data.length / 1024).toFixed(0)} KB) to ${dir}. It's shown in the chat as a card; just say it's ready, no need to repeat its contents.\n<!--orbit-file ${JSON.stringify(info)}-->`, file: info };
+    },
+    async view_image({ path: p, question }) {
+      let dataUrl;
+      if (/^https?:/.test(p)) { const r = await fetch(p); if (!r.ok) throw new Error(`HTTP ${r.status}`); const ct = r.headers.get('content-type') || 'image/jpeg'; dataUrl = `data:${ct};base64,${Buffer.from(await r.arrayBuffer()).toString('base64')}`; }
+      else { const full = expand(p, store.workDir); const ext = path.extname(full).slice(1).toLowerCase().replace('jpg', 'jpeg'); dataUrl = `data:image/${ext || 'png'};base64,${fs.readFileSync(full).toString('base64')}`; }
+      const s = store.getSettings();
+      if (question && s.visionModel) return agent.askVision(dataUrl, question);
+      return { text: 'The image is attached next.', image: dataUrl };
+    },
+    async connectors_list() {
+      if (!agent.connectors) return 'Connectors are not available.';
+      const st = agent.connectors.status();
+      const lines = [...st.mcp.map(m => `MCP ${m.name}: ${m.status}${m.error ? ' (' + m.error + ')' : ''}${m.toolNames.length ? ' · tools: ' + m.toolNames.join(', ') : ''}`), ...st.api.map(a => `API ${a.name}: ${a.enabled ? 'on' : 'off'} · tool ${a.tool}`)];
+      return (lines.join('\n') || 'No connectors yet.') + `\nGoogle (Gmail, Calendar): ${agent.google && agent.google.connected() ? 'connected' : 'not connected'}. The user adds connectors in the Connectors screen.`;
+    },
+    ...buildOsint({ agent, store, lane, browser }),
     async run_command({ command, cwd, timeout_sec }) {
       if (!command) throw new Error('No command given.');
       if (needApproval(RISKY.test(command))) {
@@ -398,7 +446,13 @@ function buildTools(agent, lane = { id: 'main' }) {
     },
   });
   for (const k of ['windows_list', 'window_focus', 'ui_snapshot', 'ui_click', 'ui_type', 'keys_send', 'mouse_click', 'screenshot']) tools[k] = ui(tools[k]);
-  return tools;
+  // Connector tools (mcp_*, api_*) are looked up live, so a server added mid-chat just works.
+  return new Proxy(tools, {
+    get(t, name) {
+      if (name in t || typeof name !== 'string' || !agent.connectors || !agent.connectors.has(name)) return t[name];
+      return (args) => agent.connectors.call(name, args || {}, (title, detail) => agent.requestApproval(lane.id, title, detail), store.getSettings().approvalMode);
+    },
+  });
 }
 
-module.exports = { buildTools, TOOL_SCHEMAS };
+module.exports = { buildTools, TOOL_SCHEMAS, allSchemas };

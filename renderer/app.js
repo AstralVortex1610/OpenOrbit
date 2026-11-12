@@ -89,6 +89,18 @@
     $('.body', el).appendChild(d);
     wireCode(d); addListen(d, text);
   }
+  // A file Orbit made (PDF, PPTX, DOCX…): a card with Open / Show in folder / Save as.
+  function fileCard(f) {
+    const el = document.createElement('div');
+    el.className = 'file-card fmt-' + f.format;
+    const kb = f.size > 1048576 ? (f.size / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(f.size / 1024)) + ' KB';
+    el.innerHTML = `<div class="fc-icon"><span>${escapeHtml(String(f.format).toUpperCase())}</span></div><div class="fc-main"><div class="fc-name" title="${escapeHtml(f.path)}">${escapeHtml(f.name)}</div><div class="fc-meta">${escapeHtml(f.title || '')}${f.title ? ' · ' : ''}${kb}</div><div class="fc-actions"><button class="primary sm" data-a="open">Open</button><button class="ghost sm" data-a="reveal">Show in folder</button><button class="ghost sm" data-a="save">Save as…</button></div></div>`;
+    el.querySelector('[data-a=open]').onclick = async () => { const r = await api.files.open(f.path); if (r) toast(r === 'File not found' ? 'That file was moved or deleted.' : String(r)); };
+    el.querySelector('[data-a=reveal]').onclick = async () => { if (!(await api.files.reveal(f.path))) toast('That file was moved or deleted.'); };
+    el.querySelector('[data-a=save]').onclick = async () => { const r = await api.files.saveAs(f.path); if (r.ok) toast('Saved a copy'); else if (r.error) toast(r.error); };
+    return el;
+  }
+  const fileFromText = (t) => { const m = String(t || '').match(/<!--orbit-file ([\s\S]*?)-->/); if (!m) return null; try { return JSON.parse(m[1]); } catch { return null; } };
   function addListen(mdEl, text) {
     if (!mdEl || !text || mdEl.querySelector('.listen')) return;
     const b = document.createElement('button');
@@ -224,6 +236,7 @@
         $('.ico', s.st).innerHTML = e.ok ? ICONS.check : ICONS.x;
         s.det.textContent += '\n\n→ ' + e.preview;
         if (e.image) { const img = document.createElement('img'); img.className = 'step-shot'; img.src = e.image; s.det.after(img); }
+        if (e.file) { placeBeforeThinking(fileCard(e.file)); scrollDown(true); }
         break;
       }
       case 'approval': {
@@ -406,7 +419,7 @@
   // ---------- switching conversations (main chat or a project) ----------
   function msgText(m) {
     let text = m.display || (typeof m.content === 'string' ? m.content : ((m.content || []).find(p => p.type === 'text') || {}).text);
-    if (text) text = text.replace(/\n\n\(Sent from Live voice[\s\S]*$/, '');
+    if (text) text = text.replace(/\n\n\(Sent from Live voice[\s\S]*$/, '').replace(/\n\n\(Attached images? saved at: [^)]*\)$/, '');
     return text;
   }
   function renderThread(thread) {
@@ -414,6 +427,8 @@
       if (m.role === 'user') {
         const imgs = Array.isArray(m.content) ? m.content.filter(p => p.type === 'image_url').map(p => p.image_url.url) : [];
         addUser(msgText(m), imgs, m.via);
+      } else if (m.role === 'tool' && fileFromText(m.content)) {
+        const el = newTurn(); $('.thinking', el).remove(); $('.body', el).appendChild(fileCard(fileFromText(m.content)));
       } else if (m.role === 'assistant' && m.content) addAssistantStatic(m.content, m.proactive || (m.worker ? `Background · ${m.worker}` : ''));
     }
   }
@@ -501,8 +516,8 @@
   $('#openMemFolder').onclick = () => api.openMemoryFolder();
 
   // ---------- settings ----------
-  const FIELDS = ['orbitVoice', 'orbitStt', 'orbitTts', 'orbitPhononVoice', 'orbitWinVoice', 'orbitPauseMs', 'liveEngine', 'liveGeminiVoice', 'liveOpenaiVoice', 'baseUrl', 'model', 'fastModel', 'voiceModel', 'browserChannel', 'phoneWhen', 'phoneIdleMinutes', 'ntfyServer', 'transcribeModel', 'userName', 'approvalMode', 'dailyTokenCap', 'maxSteps', 'hotkey', 'maxWorkers', 'imageModel', 'imageBaseUrl', 'googleClientId'];
-  const TOGGLES = ['autoUpdate', 'talkFirst', 'autoCall', 'orbitGpu', 'wakeOpensLive', 'voiceReplies', 'closeToTray', 'startWithWindows', 'wakeWord', 'ntfyEnabled', 'telegramEnabled'];
+  const FIELDS = ['orbitVoice', 'orbitStt', 'orbitTts', 'orbitPhononVoice', 'orbitWinVoice', 'orbitPauseMs', 'liveEngine', 'liveGeminiVoice', 'liveOpenaiVoice', 'baseUrl', 'model', 'fastModel', 'voiceModel', 'browserChannel', 'phoneWhen', 'phoneIdleMinutes', 'ntfyServer', 'transcribeModel', 'userName', 'approvalMode', 'dailyTokenCap', 'maxSteps', 'hotkey', 'maxWorkers', 'imageModel', 'imageBaseUrl', 'googleClientId', 'visionModel'];
+  const TOGGLES = ['autoUpdate', 'talkFirst', 'autoCall', 'orbitGpu', 'wakeOpensLive', 'voiceReplies', 'closeToTray', 'startWithWindows', 'wakeWord', 'ntfyEnabled', 'telegramEnabled', 'osintBeta'];
   // Edits you haven't saved yet survive any refresh of this screen (a new ntfy topic,
   // Telegram pairing, Google connect...). Before, those refreshes wiped the whole form.
   const dirty = new Set();
@@ -515,7 +530,7 @@
     FIELDS.forEach(f => { const el = $('#s-' + f); if (!el) return; el.value = settings[f] ?? ''; if (el.tagName === 'SELECT' && el.selectedIndex < 0) el.selectedIndex = 0; });
     TOGGLES.forEach(f => { $('#s-' + f).checked = !!settings[f]; });
     $('#s-apiKey').value = '';
-    for (const k of ['googleClientSecret', 'netlifyToken', 'imageApiKey']) { $('#k-' + k).value = ''; $('#k-' + k + 'State').textContent = settings['has_' + k] ? `Saved and encrypted (${settings[k + 'Preview']}).` : ''; }
+    for (const k of ['googleClientSecret', 'netlifyToken', 'imageApiKey', 'hibpKey']) { $('#k-' + k).value = ''; $('#k-' + k + 'State').textContent = settings['has_' + k] ? `Saved and encrypted (${settings[k + 'Preview']}).` : ''; }
     $('#googleState').textContent = settings.has_googleRefresh ? `Connected as ${settings.googleEmail || 'your account'}.` : 'Not connected.';
     $('#googleState').style.color = settings.has_googleRefresh ? 'var(--ok)' : '';
     $('#googleDisconnect').style.display = settings.has_googleRefresh ? '' : 'none';
@@ -722,9 +737,9 @@
     const key = $('#s-apiKey').value.trim(); if (key) out.apiKey = key;
     out.backupModels = readBackups();
     const tg = $('#s-telegramToken').value.trim(); if (tg) out.telegramToken = tg;
-    for (const k of ['liveGeminiKey', 'liveOpenaiKey', 'googleClientSecret', 'netlifyToken', 'imageApiKey']) { const v = $('#k-' + k).value.trim(); if (v) out[k] = v; }
+    for (const k of ['liveGeminiKey', 'liveOpenaiKey', 'googleClientSecret', 'netlifyToken', 'imageApiKey', 'hibpKey']) { const v = $('#k-' + k).value.trim(); if (v) out[k] = v; }
     const prevTts = settings.orbitTts || 'auto', prevStt = settings.orbitStt || 'moonshine';
-    try { settings = await api.saveSettings(out); }
+    try { settings = await api.saveSettings(out); document.body.classList.toggle('osint-on', !!settings.osintBeta); }
     catch (e) { toast(`Couldn't save settings: ${String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`); throw e; }
     // Switching who speaks (or how Orbit hears) reloads the voice next time it's needed.
     if (window.OrbitVoice && !(window.OrbitLive && OrbitLive.on) && ((settings.orbitTts || 'auto') !== prevTts || (settings.orbitStt || 'moonshine') !== prevStt)) OrbitVoice.unload();
@@ -758,6 +773,7 @@
     get scope() { return scope; }, get settings() { return settings; },
     busy: (id) => !!busyMap[id],
     send: (text) => { openScope('main').then(() => { show('chat'); api.send(text, []); }); },
+    compose: (text, attach) => { openScope('main').then(() => { show('chat'); input.value = text; input.dispatchEvent(new Event('input')); input.focus(); input.setSelectionRange(text.length, text.length); if (attach) $('#fileInput').click(); }); },
   };
 
   // ---------- boot ----------
@@ -774,6 +790,7 @@
       $('#goSetup').onclick = () => show('settings');
       $('#welcome').classList.remove('gone');
     }
+    document.body.classList.toggle('osint-on', !!settings.osintBeta);
     window.dispatchEvent(new CustomEvent('orbit-ready', { detail: settings }));
     // Orbit comes up by itself: it opens a call and speaks first (Settings → Live voice to turn off).
     setTimeout(() => {

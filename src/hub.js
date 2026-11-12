@@ -119,8 +119,9 @@ const PANEL_SHAPE = `{
 }`;
 
 function install(Agent) {
-  const { buildTools, TOOL_SCHEMAS } = require('./tools');
-  const schemasFor = (allow) => TOOL_SCHEMAS.filter(t => allow(t.function.name));
+  const { buildTools, TOOL_SCHEMAS, allSchemas } = require('./tools');
+  let self = null;
+  const schemasFor = (allow) => (self ? allSchemas(self) : TOOL_SCHEMAS).filter(t => allow(t.function.name));
 
   Agent.prototype.postUpdate = function (u) {
     const item = this.hub.addUpdate(u);
@@ -130,6 +131,7 @@ function install(Agent) {
 
   // ---------------- project chats ----------------
   Agent.prototype.projectSend = function (pid, text, attachments) {
+    self = this;
     if (!this.hub.project(pid)) return;
     this.projQ = this.projQ || new Map(); this.projBusy = this.projBusy || new Set();
     if (!this.projQ.has(pid)) this.projQ.set(pid, []);
@@ -159,7 +161,7 @@ function install(Agent) {
     if (!s.apiKey) { emit({ type: 'error', message: 'Orbit needs a brain first. Open Settings and add your base URL, API key and model.' }); return; }
     const append = (m) => { const t = this.hub.thread(pid); t.push(m); this.hub.saveThread(pid, t); };
     let content = text;
-    if (attachments && attachments.length) content = [{ type: 'text', text: text || 'Look at this.' }, ...attachments.map(a => ({ type: 'image_url', image_url: { url: a.dataUrl } }))];
+    if (attachments && attachments.length) content = [{ type: 'text', text: (text || 'Look at this.') + this.saveAttachments(attachments) }, ...attachments.map(a => ({ type: 'image_url', image_url: { url: a.dataUrl } }))];
     const msg = { role: 'user', content, ui: true, id: uid(), at: Date.now() };
     append(msg);
     emit({ type: 'user_message', id: msg.id, text, images: (attachments || []).map(a => a.dataUrl) });

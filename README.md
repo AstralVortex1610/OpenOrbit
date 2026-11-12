@@ -26,6 +26,9 @@
 - **Works in parallel.** Background workers run several tasks at once, and Orbit still answers you while it's busy.
 - **Projects.** Each project gets its own chat, brief and files.
 - **Home and Updates.** Live panels that refresh themselves, plus a feed of everything Orbit has finished.
+- **Files from research.** Ask for a report and Orbit researches, then hands you a designed PDF (or PPTX, DOCX, HTML, Markdown, TXT, CSV) right in the chat, with sources.
+- **Connectors.** Plug in any MCP server (a local command or a remote URL) or any HTTP API (GitHub, Notion, Slack and Linear presets). Their tools show up in every chat, keys are encrypted, and anything that writes asks you first.
+- **Osint (beta, off by default).** Photo metadata and geolocation, reverse image search, product price hunts, and domain, IP, organisation and public-figure lookups, all from public sources with citations. It does not profile private individuals.
 - **Email and calendar.** Gmail and Google Calendar, using your own Google sign-in.
 - **Scheduled tasks and memory.** Recurring jobs, and a memory of what matters to you.
 - **Phone pings.** ntfy or Telegram, so you can answer Orbit when you're away from your desk.

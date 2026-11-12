@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld('orbit', {
   phoneTest: () => ipcRenderer.invoke('phone:test'),
   phoneStatus: () => ipcRenderer.invoke('phone:status'),
   phoneNewTopic: () => ipcRenderer.invoke('phone:newTopic'),
+  files: { open: (p) => ipcRenderer.invoke('file:open', p), reveal: (p) => ipcRenderer.invoke('file:reveal', p), saveAs: (p) => ipcRenderer.invoke('file:saveAs', p) },
+  connectors: { status: () => ipcRenderer.invoke('connectors:status'), presets: () => ipcRenderer.invoke('connectors:presets'), save: (p) => ipcRenderer.invoke('connectors:save', p), restart: () => ipcRenderer.invoke('connectors:restart') },
   update: { state: () => ipcRenderer.invoke('update:state'), check: () => ipcRenderer.invoke('update:check'), install: () => ipcRenderer.invoke('update:install') },
   phoneUnpairTelegram: () => ipcRenderer.invoke('phone:unpairTelegram'),
   getWakeModel: () => ipcRenderer.invoke('wake:model'),
@@ -84,7 +86,7 @@ contextBridge.exposeInMainWorld('orbit', {
     close: () => ipcRenderer.invoke('win:close'),
   },
   on: (channel, fn) => {
-    const ok = ['agent:event', 'tasks:changed', 'ui:focusInput', 'settings:changed', 'live:event', 'voice:progress', 'update:state'];
+    const ok = ['agent:event', 'tasks:changed', 'ui:focusInput', 'settings:changed', 'live:event', 'voice:progress', 'update:state', 'connectors:changed'];
     if (!ok.includes(channel)) return;
     ipcRenderer.on(channel, (_e, payload) => fn(payload));
   },

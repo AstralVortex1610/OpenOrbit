@@ -1,7 +1,7 @@
 {
   "name": "orbit",
   "productName": "Orbit",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "description": "Orbit, your personal desktop agent.",
   "main": "src/main.js",
   "author": "Affan Mohammed",
@@ -60,7 +60,9 @@
     ]
   },
   "dependencies": {
+    "jszip": "^3.10.2",
     "playwright-core": "^1.64.1",
+    "pptxgenjs": "^4.0.1",
     "ws": "^8.22.0"
   }
 }

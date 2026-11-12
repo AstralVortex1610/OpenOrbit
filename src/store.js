@@ -51,9 +51,14 @@ const DEFAULT_SETTINGS = {
   googleEmail: '',
   backupModels: [], // [{ id, model, baseUrl, apiKeyEnc }]: tried in order when the main model hits a limit
   autoUpdate: true,
+  visionModel: '', // used to read images when the main model can't see
+  osintBeta: false, // hidden beta: Osint toolkit
+  mcpServers: [], // [{ id, name, type: 'stdio'|'http', command, args, url, enabled, secretEnc }] secret = { env, headers }
+  apiConnectors: [], // [{ id, name, baseUrl, auth, authHeader, headers, description, enabled, apiKeyEnc }]
 };
+const LIST_KEYS = new Set(['backupModels', 'mcpServers', 'apiConnectors']);
 function sleepSync(ms) { try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } catch {} }
-const SECRET_KEYS = ['liveGeminiKey', 'liveOpenaiKey', 'googleClientSecret', 'googleRefresh', 'netlifyToken', 'imageApiKey'];
+const SECRET_KEYS = ['liveGeminiKey', 'liveOpenaiKey', 'googleClientSecret', 'googleRefresh', 'netlifyToken', 'imageApiKey', 'hibpKey'];
 
 const DEFAULT_TASKS = [
   {
@@ -153,6 +158,14 @@ class Store {
       let apiKey = ''; if (b.apiKeyEnc) { try { apiKey = this._dec(b.apiKeyEnc); } catch {} }
       return { id: b.id, model: b.model, baseUrl: b.baseUrl || '', apiKey };
     });
+    s.mcpServers = (Array.isArray(s.mcpServers) ? s.mcpServers : []).map(m => {
+      let sec = {}; if (m.secretEnc) { try { sec = JSON.parse(this._dec(m.secretEnc)); } catch {} }
+      const { secretEnc, ...rest } = m; return { ...rest, env: sec.env || {}, headers: sec.headers || {} };
+    });
+    s.apiConnectors = (Array.isArray(s.apiConnectors) ? s.apiConnectors : []).map(a => {
+      let apiKey = ''; if (a.apiKeyEnc) { try { apiKey = this._dec(a.apiKeyEnc); } catch {} }
+      const { apiKeyEnc, ...rest } = a; return { ...rest, apiKey };
+    });
     s.telegramToken = '';
     if (s.telegramTokenEnc) { try { s.telegramToken = this._dec(s.telegramTokenEnc); } catch { s.telegramToken = ''; } }
     return s;
@@ -167,12 +180,14 @@ class Store {
     const masked = hasKey ? s.apiKey.slice(0, 4) + '…' + s.apiKey.slice(-4) : '';
     delete s.apiKey; delete s.apiKeyEnc;
     s.backupModels = s.backupModels.map(b => ({ id: b.id, model: b.model, baseUrl: b.baseUrl, hasKey: !!b.apiKey, keyPreview: b.apiKey ? b.apiKey.slice(0, 4) + '…' + b.apiKey.slice(-4) : '' }));
+    s.mcpServers = s.mcpServers.map(({ env, headers, ...m }) => ({ ...m, envKeys: Object.keys(env || {}), headerKeys: Object.keys(headers || {}) }));
+    s.apiConnectors = s.apiConnectors.map(({ apiKey, ...a }) => ({ ...a, hasKey: !!apiKey, keyPreview: apiKey ? apiKey.slice(0, 4) + '…' + apiKey.slice(-4) : '' }));
     return { ...s, hasKey, keyPreview: masked };
   }
   saveSettings(incoming) {
     const cur = this._raw(true);
     const next = { ...cur };
-    for (const k of Object.keys(DEFAULT_SETTINGS)) if (k !== 'backupModels' && incoming[k] !== undefined) next[k] = incoming[k];
+    for (const k of Object.keys(DEFAULT_SETTINGS)) if (!LIST_KEYS.has(k) && incoming[k] !== undefined) next[k] = incoming[k];
     if (typeof incoming.apiKey === 'string' && incoming.apiKey.trim()) {
       const key = incoming.apiKey.trim();
       const enc = this.safe && this.safe.isEncryptionAvailable() ? this.safe.encryptString(key) : Buffer.from(key, 'utf8');
@@ -186,6 +201,29 @@ class Store {
         const row = { id, model: String(b.model).trim(), baseUrl: String(b.baseUrl || '').trim() };
         if (typeof b.apiKey === 'string' && b.apiKey.trim()) row.apiKeyEnc = this._enc(b.apiKey.trim());
         else if (!b.clearKey && old.get(id) && old.get(id).apiKeyEnc) row.apiKeyEnc = old.get(id).apiKeyEnc;
+        return row;
+      });
+    }
+    const rid = () => Math.random().toString(36).slice(2, 10);
+    if (Array.isArray(incoming.mcpServers)) {
+      const old = new Map((Array.isArray(cur.mcpServers) ? cur.mcpServers : []).map(m => [m.id, m]));
+      next.mcpServers = incoming.mcpServers.filter(m => m && String(m.name || '').trim() && (m.command || m.url)).slice(0, 20).map(m => {
+        const id = m.id || rid();
+        const row = { id, name: String(m.name).trim().slice(0, 40), type: m.type === 'http' ? 'http' : 'stdio', command: String(m.command || '').trim(), args: String(m.args || '').trim(), url: String(m.url || '').trim(), enabled: m.enabled !== false };
+        let sec = null;
+        if (m.env || m.headers) sec = { env: m.env || {}, headers: m.headers || {} };
+        if (sec && (Object.keys(sec.env).length || Object.keys(sec.headers).length)) row.secretEnc = this._enc(JSON.stringify(sec));
+        else if (!m.clearSecret && old.get(id) && old.get(id).secretEnc) row.secretEnc = old.get(id).secretEnc;
+        return row;
+      });
+    }
+    if (Array.isArray(incoming.apiConnectors)) {
+      const old = new Map((Array.isArray(cur.apiConnectors) ? cur.apiConnectors : []).map(a => [a.id, a]));
+      next.apiConnectors = incoming.apiConnectors.filter(a => a && String(a.name || '').trim() && String(a.baseUrl || '').trim()).slice(0, 20).map(a => {
+        const id = a.id || rid();
+        const row = { id, name: String(a.name).trim().slice(0, 40), baseUrl: String(a.baseUrl).trim(), auth: ['bearer', 'raw', 'header', 'query', 'none'].includes(a.auth) ? a.auth : 'bearer', authHeader: String(a.authHeader || '').trim(), headers: a.headers && typeof a.headers === 'object' ? a.headers : {}, description: String(a.description || '').slice(0, 600), enabled: a.enabled !== false };
+        if (typeof a.apiKey === 'string' && a.apiKey.trim()) row.apiKeyEnc = this._enc(a.apiKey.trim());
+        else if (!a.clearKey && old.get(id) && old.get(id).apiKeyEnc) row.apiKeyEnc = old.get(id).apiKeyEnc;
         return row;
       });
     }

@@ -1,5 +1,5 @@
 // Orbit — main process: window, tray, notifications, settings, scheduler, IPC.
-const { app, BrowserWindow, Tray, Menu, Notification, ipcMain, globalShortcut, nativeImage, safeStorage, shell, powerMonitor } = require('electron');
+const { app, BrowserWindow, Tray, Menu, Notification, ipcMain, globalShortcut, nativeImage, safeStorage, shell, powerMonitor, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { Agent } = require('./agent');
@@ -143,6 +143,28 @@ ipcMain.handle('settings:save', (_e, s) => {
   updater.startAuto(cur.autoUpdate !== false);
   return store.getSettingsForUI();
 });
+// ---------- files Orbit made ----------
+const fileOk = (p) => typeof p === 'string' && fs.existsSync(p);
+ipcMain.handle('file:open', (_e, p) => fileOk(p) ? shell.openPath(p) : 'File not found');
+ipcMain.handle('file:reveal', (_e, p) => { if (fileOk(p)) shell.showItemInFolder(p); return fileOk(p); });
+ipcMain.handle('file:saveAs', async (_e, p) => {
+  if (!fileOk(p)) return { ok: false, error: 'File not found' };
+  const r = await dialog.showSaveDialog(win, { defaultPath: path.join(app.getPath('downloads'), path.basename(p)) });
+  if (r.canceled || !r.filePath) return { ok: false };
+  fs.copyFileSync(p, r.filePath); return { ok: true, path: r.filePath };
+});
+// ---------- connectors ----------
+ipcMain.handle('connectors:status', () => agent.connectors.status());
+ipcMain.handle('connectors:presets', () => require('./connectors').API_PRESETS);
+ipcMain.handle('connectors:save', async (_e, patch) => {
+  const out = {};
+  if (Array.isArray(patch.mcpServers)) out.mcpServers = patch.mcpServers;
+  if (Array.isArray(patch.apiConnectors)) out.apiConnectors = patch.apiConnectors;
+  store.saveSettings(out);
+  agent.connectors.restart().catch(() => {});
+  return { settings: store.getSettingsForUI(), status: agent.connectors.status() };
+});
+ipcMain.handle('connectors:restart', async () => { agent.connectors.stopAll(); agent.connectors.clients.clear(); await agent.connectors.restart(); return agent.connectors.status(); });
 ipcMain.handle('update:state', () => updater.state);
 ipcMain.handle('update:check', () => updater.check(false));
 ipcMain.handle('update:install', () => updater.install());
@@ -267,9 +289,11 @@ if (!app.requestSingleInstanceLock()) {
     ensurePhoneIds();
     phone.restart();
     updater.startAuto(store.getSettings().autoUpdate !== false);
+    agent.connectors.onChange = () => send('connectors:changed', agent.connectors.status());
+    setTimeout(() => agent.connectors.restart().catch(e => console.error(e)), 3000);
   });
   app.on('before-quit', () => {
-  if (agent && agent.browser) agent.browser.close(); live.stop(); phone.stopAll(); quitting = true; });
+  if (agent && agent.browser) agent.browser.close(); live.stop(); phone.stopAll(); try { agent.connectors.stopAll(); } catch {} quitting = true; });
   app.on('will-quit', () => globalShortcut.unregisterAll());
   app.on('window-all-closed', (e) => { /* stay alive in tray */ });
 }

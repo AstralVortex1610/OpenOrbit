@@ -7,18 +7,21 @@
 //   workers : background tasks (start_task, voice tasks), up to maxWorkers in parallel, each with its own
 //             browser tab and its own private thread. Results are posted back into the conversation.
 const os = require('os');
-const { buildTools, TOOL_SCHEMAS } = require('./tools');
+const { buildTools, TOOL_SCHEMAS, allSchemas } = require('./tools');
+const { OSINT_PROMPT } = require('./osint');
+const { Connectors } = require('./connectors');
 const { Google } = require('./google');
 const { Hub, install: installHub } = require('./hub');
 
-const PARALLEL_SAFE = new Set(['read_file', 'list_dir', 'web_search', 'fetch_url', 'memory_list', 'memory_read', 'skill_read', 'list_tasks', 'windows_list', 'screenshot', 'task_status', 'gmail_search', 'gmail_read', 'calendar_events', 'start_task']);
+const PARALLEL_SAFE = new Set(['read_file', 'list_dir', 'web_search', 'fetch_url', 'memory_list', 'memory_read', 'skill_read', 'list_tasks', 'windows_list', 'screenshot', 'task_status', 'gmail_search', 'gmail_read', 'calendar_events', 'start_task', 'view_image', 'connectors_list', 'image_metadata', 'place_lookup', 'whois_lookup', 'dns_lookup', 'subdomains', 'ip_lookup', 'site_tech', 'wayback', 'org_lookup', 'public_figure']);
 const SIDE_TOOLS = new Set(['web_search', 'fetch_url', 'read_file', 'list_dir', 'memory_list', 'memory_read', 'memory_append', 'skill_read', 'list_tasks', 'open', 'task_status', 'start_task', 'stop_task', 'tell_main', 'gmail_search', 'gmail_read', 'calendar_events', 'notify_user', 'schedule_task']);
 const NO_WORKER = new Set(['start_task', 'wait_tasks', 'tell_main', 'stop_task', 'project_brief']);
 const NO_MAIN = new Set(['tell_main', 'project_brief']);
 
 const projOf = (lane) => (String(lane).startsWith('proj-') ? { project: String(lane).slice(5) } : {});
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
-const schemasFor = (allow) => TOOL_SCHEMAS.filter(t => allow(t.function.name));
+let AGENT = null;
+const schemasFor = (allow) => (AGENT ? allSchemas(AGENT) : TOOL_SCHEMAS).filter(t => allow(t.function.name));
 
 class Agent {
   constructor({ store, emit, reachOut }) {
@@ -37,6 +40,8 @@ class Agent {
     this.workerQueue = [];
     this.current = null;        // { text, steps[] } for the main task
     this.google = new Google(store);
+    this.connectors = new Connectors(store, (m) => console.log('[connectors] ' + m));
+    AGENT = this;
     this.hub = new Hub(store);
     this.viewScope = 'main';
     this.tools = buildTools(this, { id: 'main' });
@@ -185,7 +190,7 @@ class Agent {
       this._append({ role: 'user', content: `[Scheduled task "${proactiveTask.name}"] ${proactiveTask.prompt}`, hidden: true, at: Date.now() });
     } else {
       let content = userText;
-      if (attachments && attachments.length) content = [{ type: 'text', text: userText || 'Look at this.' }, ...attachments.map(a => ({ type: 'image_url', image_url: { url: a.dataUrl } }))];
+      if (attachments && attachments.length) content = [{ type: 'text', text: (userText || 'Look at this.') + this.saveAttachments(attachments) }, ...attachments.map(a => ({ type: 'image_url', image_url: { url: a.dataUrl } }))];
       const msg = { role: 'user', content, ui: true, id: uid(), at: Date.now() };
       if (source && source !== 'app') msg.via = source;
       if (display) msg.display = display;
@@ -382,15 +387,15 @@ ${this._recentTranscript(10) || '(none)'}`;
         } catch (e) { result = { text: `Error: ${e.message}` }; }
         if (typeof result === 'string') result = { text: result };
         const text = String(result.text ?? '').slice(0, 14000);
-        emit({ type: 'tool_end', id: callId, ok: !text.startsWith('Error'), preview: text.slice(0, 600), image: result.image || null });
-        return { call, name, text, image: result.image };
+        emit({ type: 'tool_end', id: callId, ok: !text.startsWith('Error'), preview: text.replace(/\n?<!--orbit-file [\s\S]*?-->/, '').slice(0, 600), image: result.image || null, file: result.file || null });
+        return { call, name, text, image: result.image, file: result.file };
       };
       // Read-only calls in the same step run at once; anything that acts runs in order.
-      const parallel = res.toolCalls.length > 1 && res.toolCalls.every(c => PARALLEL_SAFE.has(c.function.name));
+      const parallel = res.toolCalls.length > 1 && res.toolCalls.every(c => PARALLEL_SAFE.has(c.function.name) || (this.connectors && this.connectors.isReadOnly(c.function.name)));
       const results = parallel ? await Promise.all(res.toolCalls.map(runCall)) : [];
       if (!parallel) for (const call of res.toolCalls) { results.push(await runCall(call)); if (ctl.signal.aborted) break; }
       const images = [];
-      for (const r of results) { append({ role: 'tool', tool_call_id: r.call.id, name: r.name, content: r.text, at: Date.now() }); if (r.image) images.push({ type: 'image_url', image_url: { url: r.image } }); }
+      for (const r of results) { append({ role: 'tool', tool_call_id: r.call.id, name: r.name, content: r.text, at: Date.now(), ...(r.file ? { ui: true } : {}) }); if (r.image) images.push({ type: 'image_url', image_url: { url: r.image } }); }
       // Keep every tool call answered, even if we stopped partway.
       for (const c of res.toolCalls.slice(results.length)) append({ role: 'tool', tool_call_id: c.id, name: c.function.name, content: 'Not run: the task was stopped.', at: Date.now() });
       if (images.length) append({ role: 'user', content: [{ type: 'text', text: '(Image from the tool call above.)' }, ...images], hidden: true, at: Date.now() });
@@ -445,6 +450,13 @@ ${this._recentTranscript(10) || '(none)'}`;
 - Gmail and Google Calendar: ${this.google && this.google.connected() ? `connected as ${this.google.email() || 'the user'}. Use gmail_* and calendar_* tools; they are faster and more reliable than the browser.` : 'not connected. If the user wants mail or calendar work, use the browser, and mention they can connect Google in Settings, then Accounts, for faster access.'}
 - generate_image makes pictures${s.imageModel ? '' : ' (needs an image model set in Settings first)'}. publish_site puts a folder with index.html online on Netlify${s.netlifyToken ? '' : ' (needs a Netlify token in Settings first)'}. To make a web page: write index.html (and assets) with write_file in a folder, then publish_site.
 
+# Files
+- When the user wants research, a report, notes, a comparison, slides, or anything to keep or share, research first, then make_file. PDF is the default; use pptx for slides/presentations, docx for Word, md/txt/html/csv when asked. The file shows in chat as a card, so after make_file just say it's ready in a line or two and give the headline finding.
+- Write content as clean markdown: ## sections, short paragraphs, bullets, | tables |. Lead with the answer in summary. Put every source URL in sources.
+
+# Connectors
+${this.connectors && this.connectors.schemas().length ? `- Connected: ${this.connectors.status().mcp.filter(m => m.status === 'connected').map(m => m.name).concat(this.connectors.status().api.filter(a => a.enabled).map(a => a.name)).join(', ')}. Their tools start with mcp_ or api_. Prefer them over the browser for those services.` : '- None yet besides Google. If the user wants Orbit to reach a service (Notion, GitHub, Slack, a database, anything with an MCP server or an API), tell them to add it in Connectors.'}
+${s.osintBeta ? '\n' + OSINT_PROMPT + '\n' : ''}
 # Home, projects, updates
 - The app has a Home screen of live panels. When the user wants something glanceable that changes (a price, weather, a countdown, unread mail, trending repos), or asks for it "on my Home", use panel_create. Panels refresh themselves; never promise faster than every 30 minutes.
 - Projects are separate spaces with their own chat, files and brief. When a request is a new, ongoing body of work, offer to make it a project (project_create); create it when they agree or ask.
@@ -513,6 +525,30 @@ ${files}`;
     const file = path.join(dir, `${String(name || prompt).toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40) || 'image'}-${Date.now().toString(36)}.png`);
     fs.writeFileSync(file, buf);
     return { text: `Saved the image to ${file}. It is shown in the chat.`, image: 'data:image/png;base64,' + buf.toString('base64') };
+  }
+
+  // Keep attached images on disk too, so tools (metadata, reverse search, files) can use them.
+  saveAttachments(atts) {
+    try {
+      const fs = require('fs'); const path = require('path');
+      const dir = path.join(this.store.workDir, 'attachments'); fs.mkdirSync(dir, { recursive: true });
+      const paths = atts.filter(a => a && /^data:/.test(a.dataUrl || '')).map((a, i) => {
+        const ext = ((a.dataUrl.match(/^data:image\/([a-z0-9+]+)/i) || [])[1] || 'png').replace('jpeg', 'jpg').replace('svg+xml', 'svg');
+        const name = String(a.name || `image-${i + 1}`).replace(/\.[a-z0-9]+$/i, '').replace(/[^a-z0-9_-]+/gi, '-').slice(0, 40) + '-' + Date.now().toString(36) + '.' + ext;
+        const f = path.join(dir, name); fs.writeFileSync(f, Buffer.from(a.dataUrl.split(',')[1], 'base64')); return f;
+      });
+      return paths.length ? `\n\n(Attached image${paths.length > 1 ? 's' : ''} saved at: ${paths.join(', ')})` : '';
+    } catch { return ''; }
+  }
+
+  // Ask a vision model about an image (for when the main model can't see).
+  async askVision(dataUrl, question) {
+    const s = this.store.getSettings();
+    const model = s.visionModel || s.model;
+    const r = await fetch(this._url(s, '/chat/completions'), { method: 'POST', headers: this._headers(s), body: JSON.stringify({ model, messages: [{ role: 'user', content: [{ type: 'text', text: question || 'Describe this image in detail, including any text, signs, landmarks and clues to where it was taken.' }, { type: 'image_url', image_url: { url: dataUrl } }] }] }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) return `Error: vision model failed (HTTP ${r.status}): ${String((j.error && (j.error.message || j.error)) || '').slice(0, 200)}`;
+    return `(${model} looked at the image) ${((j.choices || [])[0] || {}).message?.content || ''}`;
   }
 
   async listModels() {
@@ -706,8 +742,23 @@ function labelFor(name, a) {
     case 'calendar_create': return `Adding "${short(a.summary, 30)}" to your calendar`;
     case 'calendar_delete': return 'Removing a calendar event';
     case 'generate_image': return `Making an image: ${short(a.prompt, 40)}`;
+    case 'make_file': return `Making ${String(a.format || 'pdf').toUpperCase()}: ${short(a.title, 40)}`;
+    case 'view_image': return 'Looking at the image';
+    case 'connectors_list': return 'Checking connectors';
+    case 'image_metadata': return 'Reading image metadata';
+    case 'reverse_image_search': return `Reverse image search (${a.engine || 'google'})`;
+    case 'place_lookup': return `Looking up place: ${short(a.query, 30)}`;
+    case 'whois_lookup': return `WHOIS ${short(a.domain, 30)}`;
+    case 'dns_lookup': return `DNS ${short(a.name, 30)}`;
+    case 'subdomains': return `Subdomains of ${short(a.domain, 30)}`;
+    case 'ip_lookup': return `IP lookup ${short(a.ip, 30)}`;
+    case 'site_tech': return `Site tech: ${short(a.url, 30)}`;
+    case 'wayback': return `Wayback history: ${short(a.url, 30)}`;
+    case 'org_lookup': return `Organisation: ${short(a.name, 30)}`;
+    case 'public_figure': return `Public figure: ${short(a.name, 30)}`;
+    case 'breach_check': return 'Checking breaches';
     case 'publish_site': return `Publishing ${short(a.name, 30)}`;
-    default: return name;
+    default: return /^mcp_/.test(name) ? `Using ${name.replace(/^mcp_/, '').replace('__', ': ').replace(/_/g, ' ')}` : /^api_/.test(name) ? `${String(a.method || 'GET')} ${name.slice(4)} ${short(a.path, 40)}` : name;
   }
 }
 

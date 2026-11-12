@@ -19,11 +19,12 @@ const SNAPSHOT_JS = () => {
     el.setAttribute('data-orbit-ref', String(n));
     const tag = el.tagName.toLowerCase();
     const role = el.getAttribute('role') || (tag === 'a' ? 'link' : tag === 'input' ? (el.type || 'text') : tag);
-    let name = el.getAttribute('aria-label') || el.innerText || el.value || el.placeholder || el.title || el.alt || el.name || '';
+    const secret = tag === 'input' && (el.type || '').toLowerCase() === 'password';
+    let name = el.getAttribute('aria-label') || el.innerText || (secret ? '' : el.value) || el.placeholder || el.title || el.alt || el.name || '';
     if (!name && el.id) { const l = document.querySelector(`label[for="${CSS.escape(el.id)}"]`); if (l) name = l.innerText; }
     name = String(name).replace(/\s+/g, ' ').trim().slice(0, 80);
     let extra = '';
-    if (tag === 'input' || tag === 'textarea') extra = el.value ? ` value="${String(el.value).slice(0, 40)}"` : (el.placeholder ? ` placeholder="${el.placeholder.slice(0, 40)}"` : '');
+    if (tag === 'input' || tag === 'textarea') extra = el.value ? (secret ? ' value="(password filled)"' : ` value="${String(el.value).slice(0, 40)}"`) : (el.placeholder ? ` placeholder="${el.placeholder.slice(0, 40)}"` : '');
     if (el.type === 'checkbox' || el.type === 'radio') extra += el.checked ? ' [checked]' : '';
     if (el.disabled) extra += ' [disabled]';
     items.push(`[${n}] ${role} "${name}"${extra}`);
@@ -112,6 +113,31 @@ class Browser {
     if (submit) await loc.press('Enter');
     await p.waitForTimeout(submit ? 1200 : 300);
     return this.snapshot();
+  }
+
+  // Fill a saved login into the page without the model ever seeing the password.
+  async login({ username, password }, { usernameRef, passwordRef, submit = true } = {}) {
+    const p = await this._ensure();
+    await this._settle(p);
+    const vis = async (loc) => (await loc.count()) && (await loc.isVisible().catch(() => false));
+    let pass = passwordRef ? this._loc(p, passwordRef) : p.locator('input[type="password"]:visible').first();
+    const hasPass = await vis(pass);
+    let user = usernameRef ? this._loc(p, usernameRef) : null;
+    if (!user) {
+      const sel = ['input[autocomplete="username"]', 'input[type="email"]', 'input[name*="user" i]', 'input[name*="email" i]', 'input[id*="user" i]', 'input[id*="email" i]', 'input[name*="login" i]', 'input[type="tel"]', 'input[type="text"]'];
+      for (const q of sel) { const l = p.locator(q + ':visible').first(); if (await vis(l)) { user = l; break; } }
+    }
+    const did = [];
+    if (username && user && await vis(user)) {
+      const cur = await user.inputValue().catch(() => '');
+      if (cur !== username) { await user.fill(''); await user.pressSequentially(String(username), { delay: 15 }); }
+      did.push('username');
+    }
+    if (hasPass && password) { await pass.fill(''); await pass.pressSequentially(String(password), { delay: 15 }); did.push('password'); }
+    if (!did.length) return 'Error: no login fields on this page. Open the sign-in page first (browser_snapshot to check), or pass username_ref / password_ref.';
+    if (submit) { await (hasPass ? pass : user).press('Enter').catch(() => {}); await p.waitForTimeout(1800); }
+    const note = hasPass ? `Filled ${did.join(' and ')}${submit ? ' and submitted' : ''}.` : 'Filled the username and went to the next step. If the next page asks for the password, call browser_login again with the same id.';
+    return note + '\n\n' + await this.snapshot();
   }
 
   async press(key) { const p = await this._ensure(); await p.keyboard.press(key); await p.waitForTimeout(500); return this.snapshot(); }

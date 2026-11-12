@@ -761,3 +761,12 @@ label.toggle.mini { margin: 0; }
 .oc-go { font-size: 12.5px; color: var(--accent-2); font-weight: 600; margin-top: 4px; opacity: .7; transition: opacity .2s, transform .2s; }
 .osint-card:hover .oc-go { opacity: 1; transform: translateX(3px); }
 .osint-note { margin-top: 22px; font-size: 12.5px; max-width: 680px; }
+
+/* Passwords */
+.pw-search { width: 100%; margin: 4px 0 6px; padding: 11px 14px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--bg-2); color: var(--text); outline: none; }
+.pw-search:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.pw-row { animation: rise .35s both; animation-delay: var(--d, 0ms); }
+.pw-ico { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; font-weight: 700; color: #fff; background: linear-gradient(135deg, var(--accent, #c4673a), #e4a270); flex: none; }
+.pw-dots { font-size: 12.5px; color: var(--text-2); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pw-row .cx-t { flex: 1; min-width: 0; }
+.empty-note { padding: 22px; text-align: center; color: var(--text-2); border: 1px dashed var(--line); border-radius: var(--radius); margin-top: 10px; }

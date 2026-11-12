@@ -25,6 +25,9 @@ const TOOL_SCHEMAS = [
   fn('browser_navigate', 'Open a page in Orbit\'s own browser window (Edge/Chrome on this laptop, stays signed in between tasks). Returns the page\'s interactive elements with numbered refs and its text.', { url: { type: 'string' } }, ['url']),
   fn('browser_snapshot', 'Re-read the current browser page: numbered interactive elements plus page text.', {}),
   fn('browser_click', 'Click an element by its ref number from the latest snapshot. Set consequential=true when the click buys, pays, books, sends, posts, deletes or submits something binding; the user must approve it first.', { ref: { type: 'number' }, consequential: { type: 'boolean' } }, ['ref']),
+  fn('password_save', 'Save a login the user gave you (encrypted on this PC) so you can sign in for them later. Call it as soon as they share one.', { site: { type: 'string', description: 'The website, e.g. github.com' }, username: { type: 'string', description: 'Username, email or phone used to sign in' }, password: { type: 'string' }, url: { type: 'string', description: 'Sign-in page URL, if known' }, note: { type: 'string' } }, ['site']),
+  fn('password_list', 'List saved logins (site, username and id; never passwords). Pass site to find the login for one website.', { site: { type: 'string' } }),
+  fn('browser_login', 'Sign in on the page open in the browser with a saved login: types the username and password straight into the page (you never see the password) and submits. Use the id from password_list. Refs are optional; fields are found automatically.', { id: { type: 'string' }, username_ref: { type: 'number' }, password_ref: { type: 'number' }, submit: { type: 'boolean' } }, ['id']),
   fn('browser_type', 'Type into an input, textarea or select (by ref). submit=true presses Enter after.', { ref: { type: 'number' }, text: { type: 'string' }, submit: { type: 'boolean' } }, ['ref', 'text']),
   fn('browser_press', 'Press a key in the browser, e.g. Enter, Escape, Tab, ArrowDown, Control+A.', { key: { type: 'string' } }, ['key']),
   fn('browser_scroll', 'Scroll the page up or down by about one screen.', { direction: { type: 'string', enum: ['up', 'down'] } }, ['direction']),
@@ -68,6 +71,7 @@ const TOOL_SCHEMAS = [
   fn('task_status', 'See what is running right now: the main task and every background task with its latest step.', {}),
   fn('wait_tasks', 'Wait for background tasks to finish and get their results.', { ids: { type: 'array', items: { type: 'string' } }, timeout_sec: { type: 'number', description: 'Default 300.' } }, ['ids']),
   fn('stop_task', 'Stop a running task by id ("main" for the main task).', { id: { type: 'string' } }, ['id']),
+  fn('forward_to_main', 'Hand the user\'s message to the main task that is running, because it is about that task (a follow-up, extra detail, correction or question about it). The main task will act on it and reply.', { message: { type: 'string', description: 'The user\'s words, as they said them.' } }, ['message']),
   fn('tell_main', 'Pass a correction or extra detail from the user to the main task that is running right now.', { message: { type: 'string' } }, ['message']),
   fn('gmail_search', 'Search the user\'s Gmail with Gmail search syntax (from:, subject:, is:unread, newer_than:2d). Returns id, from, subject, date and snippet.', { query: { type: 'string' }, max: { type: 'number', description: 'Default 10, max 25.' } }, ['query']),
   fn('gmail_read', 'Read one email by id: headers and body text.', { id: { type: 'string' } }, ['id']),
@@ -157,6 +161,13 @@ function buildTools(agent, lane = { id: 'main' }) {
     return risky;
   };
 
+  const withLoginHint = (snap) => {
+    try {
+      const m = String(snap).match(/\nURL: (\S+)/); if (!m) return snap;
+      const l = agent.passwords.list(m[1]); if (!l.length) return snap;
+      return snap.replace(/\nURL: \S+/, (u) => `${u}\nSaved login for this site: ${l.map(x => `id ${x.id} (${x.username || 'no username'})`).join(', ')}. Use browser_login to sign in.`);
+    } catch { return snap; }
+  };
   const tools = {
     async make_file(a) {
       const { format, data } = await docs.render({ ...a });
@@ -291,8 +302,25 @@ function buildTools(agent, lane = { id: 'main' }) {
       return { text: `Screenshot taken (${img.getSize().width}x${img.getSize().height}). It is attached next.`, image: dataUrl };
     },
 
-    async browser_navigate({ url }) { return browser.navigate(url); },
-    async browser_snapshot() { return browser.snapshot(); },
+    async browser_navigate({ url }) { return withLoginHint(await browser.navigate(url)); },
+    async browser_snapshot() { return withLoginHint(await browser.snapshot()); },
+    async password_save(a) {
+      const r = agent.passwords.save(a);
+      if (a.password) agent.scrubSecret(a.password);
+      agent.emit({ type: 'passwords_changed' });
+      return `${r.isNew ? 'Saved' : 'Updated'} the ${r.site} login${r.username ? ` for ${r.username}` : ''} (id ${r.id}). It is encrypted on this PC and shows on the Passwords screen.`;
+    },
+    async password_list({ site }) {
+      const l = agent.passwords.list(site);
+      if (!l.length) return site ? `No saved login for ${site}. Ask the user for it (or they can add it on the Passwords screen).` : 'No saved logins yet.';
+      return l.map(x => `${x.id} · ${x.site} · ${x.username || '(no username)'}${x.hasPassword ? '' : ' · no password saved'}${x.url ? ` · ${x.url}` : ''}${x.note ? ` · ${x.note}` : ''}`).join('\n');
+    },
+    async browser_login({ id, username_ref, password_ref, submit }) {
+      const sec = agent.passwords.secret(id);
+      if (!sec) return 'Error: no saved login with that id. Use password_list.';
+      const out = await browser.login({ username: sec.username, password: sec.password }, { usernameRef: username_ref, passwordRef: password_ref, submit: submit !== false });
+      return sec.password ? out.split(sec.password).join('••••••') : out;
+    },
     async browser_click({ ref, consequential }) {
       if (consequential && store.getSettings().approvalMode !== 'never') {
         const ok = await agent.requestApproval(lane.id, 'Click this in the browser?', `Element ${ref} on ${browser.page ? browser.page.url() : 'the page'}`);
@@ -380,6 +408,11 @@ function buildTools(agent, lane = { id: 'main' }) {
     async task_status() { return agent.statusText(); },
     async wait_tasks({ ids, timeout_sec }) { return agent.waitWorkers(ids, timeout_sec); },
     async stop_task({ id }) { return agent.stopLane(id); },
+    async forward_to_main({ message }) {
+      tools._forwarded = true;
+      const how = agent.forwardToMain(String(message || ''), lane.source);
+      return how === 'queued' ? 'The main task just finished, so this runs next as a follow-up. Tell the user you are on it.' : 'Forwarded. The main task will act on it and cover it in its reply. Tell the user in a few words.';
+    },
     async tell_main({ message }) {
       if (!agent.mainBusy) return 'Nothing is running in the main task right now. Start a background task or answer directly.';
       agent.noteToMain(`(The user just added this, mid-task: ${message})`);

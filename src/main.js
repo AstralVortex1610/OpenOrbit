@@ -155,6 +155,10 @@ ipcMain.handle('file:saveAs', async (_e, p) => {
   fs.copyFileSync(p, r.filePath); return { ok: true, path: r.filePath };
 });
 // ---------- connectors ----------
+ipcMain.handle('passwords:list', () => agent.passwords.list());
+ipcMain.handle('passwords:save', (_e, l) => { const r = agent.passwords.save(l || {}); if (l && l.password) agent.scrubSecret(l.password); return r; });
+ipcMain.handle('passwords:remove', (_e, id) => agent.passwords.remove(id));
+ipcMain.handle('passwords:reveal', (_e, id) => { const s = agent.passwords.secret(id); return s ? s.password : ''; });
 ipcMain.handle('connectors:status', () => agent.connectors.status());
 ipcMain.handle('connectors:presets', () => require('./connectors').API_PRESETS);
 ipcMain.handle('connectors:save', async (_e, patch) => {

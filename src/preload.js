@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld('orbit', {
   phoneStatus: () => ipcRenderer.invoke('phone:status'),
   phoneNewTopic: () => ipcRenderer.invoke('phone:newTopic'),
   files: { open: (p) => ipcRenderer.invoke('file:open', p), reveal: (p) => ipcRenderer.invoke('file:reveal', p), saveAs: (p) => ipcRenderer.invoke('file:saveAs', p) },
+  passwords: { list: () => ipcRenderer.invoke('passwords:list'), save: (l) => ipcRenderer.invoke('passwords:save', l), remove: (id) => ipcRenderer.invoke('passwords:remove', id), reveal: (id) => ipcRenderer.invoke('passwords:reveal', id) },
   connectors: { status: () => ipcRenderer.invoke('connectors:status'), presets: () => ipcRenderer.invoke('connectors:presets'), save: (p) => ipcRenderer.invoke('connectors:save', p), restart: () => ipcRenderer.invoke('connectors:restart') },
   update: { state: () => ipcRenderer.invoke('update:state'), check: () => ipcRenderer.invoke('update:check'), install: () => ipcRenderer.invoke('update:install') },
   phoneUnpairTelegram: () => ipcRenderer.invoke('phone:unpairTelegram'),

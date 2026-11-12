@@ -49,6 +49,10 @@
         <svg viewBox="0 0 24 24"><path d="M9 3.5v4M15 3.5v4M6.5 7.5h11v3a5.5 5.5 0 0 1-11 0zM12 16v4.5"/></svg>
         <span>Connect</span>
       </button>
+      <button class="rail-btn" data-view="passwords" title="Passwords">
+        <svg viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M11 12.2 19.5 3.7M16.5 6.7l2.3 2.3M14.3 8.9l1.8 1.8"/></svg>
+        <span>Passwords</span>
+      </button>
       <button class="rail-btn beta-only" data-view="osint" title="Osint (beta)">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12 18 6"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg>
         <span>Osint</span>
@@ -216,6 +220,30 @@
             </div>
             <textarea id="memText" spellcheck="false" disabled></textarea>
           </div>
+        </div>
+      </section>
+
+      <!-- PASSWORDS -->
+      <section class="view" id="view-passwords">
+        <div class="page">
+          <div class="page-head">
+            <div>
+              <h2>Passwords</h2>
+              <p>Logins Orbit can sign in with for you. Give one in chat ("my GitHub login is …") or add it here. They're encrypted on this PC, and Orbit types them straight into the site without ever reading them.</p>
+            </div>
+            <button class="primary" id="pwAdd" type="button">+ Add login</button>
+          </div>
+          <input class="pw-search" id="pwSearch" placeholder="Search sites or usernames" />
+          <div class="cx-form card" id="pwForm" hidden>
+            <h3 id="pwFormTitle">Add a login</h3>
+            <label>Website<input id="pwSite" placeholder="github.com" /></label>
+            <label>Username, email or phone<input id="pwUser" autocomplete="off" /></label>
+            <label>Password <small class="muted" id="pwPassHint"></small><input id="pwPass" type="password" autocomplete="new-password" /></label>
+            <label>Sign-in page <small class="muted">optional</small><input id="pwUrl" placeholder="https://github.com/login" /></label>
+            <label>Note <small class="muted">optional</small><input id="pwNote" placeholder="e.g. work account" /></label>
+            <div class="row"><button class="primary sm" id="pwSave" type="button">Save</button><button class="ghost sm" id="pwCancel" type="button">Cancel</button></div>
+          </div>
+          <div id="pwList"></div>
         </div>
       </section>
 
@@ -629,5 +657,6 @@
   <script src="app.js"></script>
   <script src="hub.js"></script>
   <script src="connect.js"></script>
+  <script src="passwords.js"></script>
 </body>
 </html>

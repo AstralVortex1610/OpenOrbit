@@ -23,7 +23,8 @@
 ## What it does
 - **Any model, with backups.** Presets for US, Chinese, EU and local labs. Any OpenAI-compatible endpoint works, including Ollama and LM Studio. Add backup models and Orbit switches to the next one by itself when a model hits its limit.
 - **Uses your computer.** Runs commands, reads and writes files, drives your installed Edge or Chrome, and clicks through Windows apps with UI Automation. It asks before anything consequential.
-- **Works in parallel.** Background workers run several tasks at once, and Orbit still answers you while it's busy.
+- **Works in parallel.** Background workers run several tasks at once, and Orbit still answers you while it's busy. Follow-ups about the task it's working on go straight to that task.
+- **Passwords.** Give Orbit a login in chat or on the Passwords screen and it signs in for you. Logins are encrypted with Windows data protection, and Orbit types the password into the site without ever reading it.
 - **Projects.** Each project gets its own chat, brief and files.
 - **Home and Updates.** Live panels that refresh themselves, plus a feed of everything Orbit has finished.
 - **Files from research.** Ask for a report and Orbit researches, then hands you a designed PDF (or PPTX, DOCX, HTML, Markdown, TXT, CSV) right in the chat, with sources.

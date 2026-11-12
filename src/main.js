@@ -8,7 +8,7 @@ const { Scheduler } = require('./scheduler');
 const { Phone } = require('./phone');
 const { Live } = require('./live');
 const { VoiceCache } = require('./voice-cache');
-const { Updater } = require('./updater');
+const { Updater, updateInProgress } = require('./updater');
 // Lets the on-device voice models use several CPU threads.
 app.commandLine.appendSwitch('enable-features', 'SharedArrayBuffer');
 
@@ -20,7 +20,8 @@ const ICON = path.join(__dirname, '..', 'assets', 'icon.png');
 const store = new Store(app.getPath('userData'), safeStorage);
 const send = (channel, payload) => { if (win && !win.isDestroyed()) win.webContents.send(channel, payload); };
 const updater = new Updater({ app, send: (c, p) => send(c, p) });
-updater.onQuit = () => { quitting = true; app.quit(); };
+// Quit for real so the update can replace the files: close windows, stop helpers, and force exit if anything hangs.
+updater.onQuit = () => { quitting = true; setTimeout(() => app.exit(0), 3000); try { app.quit(); } catch { app.exit(0); } };
 
 function showWindow() {
   if (!win) createWindow();
@@ -274,7 +275,10 @@ function registerHotkey() {
 }
 
 // ---------- lifecycle ----------
-if (!app.requestSingleInstanceLock()) {
+if (updateInProgress(app)) {
+  // An update is being copied in right now; it reopens Orbit itself when done.
+  app.exit(0);
+} else if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on('second-instance', showWindow);

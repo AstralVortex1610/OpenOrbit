@@ -12,11 +12,82 @@ const REPO = 'AstralVortex1610/OpenOrbit';
 function parse(v) { return String(v || '').replace(/^v/i, '').split('-')[0].split('.').map(n => parseInt(n, 10) || 0); }
 function newer(a, b) { const x = parse(a), y = parse(b); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); } return false; }
 
+const q = (s) => "'" + String(s).replace(/'/g, "''") + "'";
+function applyScript(o) {
+  return [
+      '$ErrorActionPreference = "Continue"',
+      `$zip = ${q(o.zip)}; $tmp = ${q(o.tmp)}; $dest = ${q(o.dest)}; $exe = ${q(o.exe)}; $log = ${q(o.log)}; $want = ${q(o.want)}`,
+      '$root = $dest.TrimEnd([char]92) + [char]92',
+      'function Log($m) { "$(Get-Date -Format o) $m" | Add-Content -Path $log -Encoding UTF8 }',
+      `Log "update to $want starting (pid ${o.pid}, folder $dest)"`,
+      `$flag = ${q(o.flag)}; Set-Content -Path $flag -Value $PID`,
+      `Wait-Process -Id ${o.pid} -Timeout 20 -ErrorAction SilentlyContinue`,
+      // anything still running from this folder (Orbit itself, its helpers) is stopped so files unlock
+      'for ($i = 0; $i -lt 10; $i++) {',
+      '  $left = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) })',
+      '  if ($left.Count -eq 0) { break }',
+      '  if ($i -eq 0) { Log "waiting for $($left.Count) Orbit process(es) to close" }',
+      '  if ($i -ge 2) { $left | Stop-Process -Force -ErrorAction SilentlyContinue }',
+      '  Start-Sleep -Milliseconds 800',
+      '}',
+      'Start-Sleep -Milliseconds 700',
+      'Unblock-File -Path $zip -ErrorAction SilentlyContinue',
+      'New-Item -ItemType Directory -Force -Path $tmp | Out-Null',
+      '& tar.exe -xf $zip -C $tmp 2>$null',
+      'if (-not (Get-ChildItem $tmp -Recurse -Filter $exe -ErrorAction SilentlyContinue)) { Log "tar could not unpack, trying Expand-Archive"; Expand-Archive -Path $zip -DestinationPath $tmp -Force }',
+      '$src = (Get-ChildItem $tmp -Recurse -Filter $exe | Select-Object -First 1).DirectoryName',
+      '$ok = $false',
+      'if ($src) {',
+      '  $newAsar = Join-Path $src "resources\\app.asar"',
+      '  for ($i = 0; $i -lt 6; $i++) {',
+      '    & robocopy $src $dest /E /IS /IT /R:2 /W:1 /NP /NDL /NJH /NJS "/LOG+:$log" | Out-Null',
+      '    $rc = $LASTEXITCODE',
+      '    $same = (Test-Path $newAsar) -and ((Get-FileHash $newAsar).Hash -eq (Get-FileHash (Join-Path $dest "resources\\app.asar") -ErrorAction SilentlyContinue).Hash)',
+      '    if ($rc -lt 8 -and $same) { $ok = $true; break }',
+      '    Log "copy attempt $($i + 1) not complete (robocopy $rc), retrying"',
+      '    Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) } | Stop-Process -Force -ErrorAction SilentlyContinue',
+      '    Start-Sleep 2',
+      '  }',
+      '  if ($ok) { Log "updated to $want" } else { Log "UPDATE FAILED: files in $dest stayed locked or unwritable" }',
+      '} else { Log "UPDATE FAILED: no $exe in the downloaded zip" }',
+      'Remove-Item $flag -Force -ErrorAction SilentlyContinue',
+      'Start-Process -FilePath (Join-Path $dest $exe) -WorkingDirectory $dest',
+      'Start-Sleep 5; Remove-Item -Recurse -Force (Split-Path $zip) -ErrorAction SilentlyContinue',
+    ].join('\r\n');
+}
+
+const applyingFlag = (app) => path.join(app.getPath('userData'), 'update-applying');
+// True while the update script is copying files: a copy of Orbit opened by hand now would lock
+// them, so it should step aside and let the script reopen the new version.
+function updateInProgress(app) {
+  try {
+    const f = applyingFlag(app); const st = fs.statSync(f);
+    if (Date.now() - st.mtimeMs > 3 * 60 * 1000) return false;
+    const pid = parseInt(fs.readFileSync(f, 'utf8'), 10);
+    if (pid) process.kill(pid, 0); // throws if the script is gone
+    return true;
+  } catch { return false; }
+}
+
 class Updater {
   constructor({ app, send }) {
     this.app = app; this.send = send;
     this.state = { status: 'idle', current: app.getVersion() };
     this.timer = null;
+    this._verify();
+  }
+
+  // After "Update now", the next launch checks it is really the new version.
+  _verify() {
+    let pend; const f = path.join(this.app.getPath('userData'), 'update-pending.json');
+    try { pend = JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return; }
+    try { fs.unlinkSync(f); } catch {}
+    if (!pend || !pend.want) return;
+    if (newer(pend.want, this.state.current)) {
+      let tail = ''; try { tail = fs.readFileSync(path.join(this.app.getPath('userData'), 'update.log'), 'utf8').split(/\r?\n/).filter(l => /UPDATE FAILED|not complete|starting|updated to/.test(l)).slice(-3).join(' · '); } catch {}
+      this.state = { ...this.state, status: 'error', error: `The update to ${pend.want} didn't install, so you're still on ${this.state.current}. ${tail ? 'Log: ' + tail.slice(0, 300) : 'The update script never ran (antivirus or PowerShell may have blocked it).'} Try again, or download the zip from GitHub.`, lastFailure: true };
+      this.state.lastFailure = this.state.error;
+    } else this.state = { ...this.state, status: 'updated', justUpdated: pend.from };
   }
   _set(patch) { this.state = { ...this.state, ...patch }; this.send('update:state', this.state); return this.state; }
 
@@ -74,29 +145,19 @@ class Updater {
 
     const exe = path.basename(process.execPath);
     const ps = path.join(work, 'apply.ps1');
+    const log = path.join(this.app.getPath('userData'), 'update.log');
     const q = (s) => "'" + String(s).replace(/'/g, "''") + "'";
-    fs.writeFileSync(ps, [
-      '$ErrorActionPreference = "Continue"',
-      `$zip = ${q(zip)}; $tmp = ${q(path.join(work, 'x'))}; $dest = ${q(dest)}; $exe = ${q(exe)}; $log = ${q(path.join(this.app.getPath('userData'), 'update.log'))}`,
-      `Wait-Process -Id ${process.pid} -Timeout 60 -ErrorAction SilentlyContinue`,
-      'Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($dest) } | Wait-Process -Timeout 30 -ErrorAction SilentlyContinue',
-      'New-Item -ItemType Directory -Force -Path $tmp | Out-Null',
-      '& tar.exe -xf $zip -C $tmp 2>$null',
-      'if (-not (Get-ChildItem $tmp -Recurse -Filter $exe -ErrorAction SilentlyContinue)) { Expand-Archive -Path $zip -DestinationPath $tmp -Force }',
-      '$src = (Get-ChildItem $tmp -Recurse -Filter $exe | Select-Object -First 1).DirectoryName',
-      'if ($src) {',
-      '  for ($i = 0; $i -lt 5; $i++) { & robocopy $src $dest /E /R:3 /W:1 /NFL /NDL /NJH /NJS | Out-Null; if ($LASTEXITCODE -lt 8) { break }; Start-Sleep 2 }',
-      '  "$(Get-Date -Format o) updated from $src (robocopy $LASTEXITCODE)" | Add-Content $log',
-      '} else { "$(Get-Date -Format o) update failed: no $exe in the zip" | Add-Content $log }',
-      'Start-Process (Join-Path $dest $exe)',
-      'Start-Sleep 5; Remove-Item -Recurse -Force (Split-Path $zip) -ErrorAction SilentlyContinue',
-    ].join('\r\n'));
+    // The script: wait for Orbit to exit (force it after 20 s), unpack, copy over this folder,
+    // check the copy really landed, then reopen. Everything goes to update.log.
+    fs.writeFileSync(ps, applyScript({ zip, tmp: path.join(work, 'x'), dest, exe, log, want: this.state.latest, pid: process.pid, flag: applyingFlag(this.app) }), 'utf8');
+    // remember what we expect, so the next launch can tell if the update really landed
+    try { fs.writeFileSync(path.join(this.app.getPath('userData'), 'update-pending.json'), JSON.stringify({ want: this.state.latest, from: this.state.current, at: Date.now() })); } catch {}
     this._set({ status: 'installing', progress: 100 });
-    const child = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', ps], { detached: true, stdio: 'ignore', windowsHide: true });
+    const child = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', ps], { detached: true, stdio: 'ignore', windowsHide: true, cwd: work });
     child.unref();
     setTimeout(() => { this.onQuit && this.onQuit(); }, 800);
     return this.state;
   }
 }
 
-module.exports = { Updater, newer };
+module.exports = { Updater, newer, applyScript, updateInProgress };

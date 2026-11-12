@@ -586,13 +586,17 @@
       : st.status === 'latest' ? `You're on the latest version (${st.current}).`
       : st.status === 'available' ? `Orbit ${st.latest} is ready to install (you have ${st.current}).`
       : st.status === 'downloading' ? `Downloading ${st.latest}… ${st.progress || 0}%`
-      : st.status === 'installing' ? 'Installing. Orbit will close and reopen in about a minute.'
+      : st.status === 'installing' ? 'Installing. Orbit will close and reopen in a few seconds.'
+      : st.status === 'updated' ? `Updated to ${st.current}. You're all set.`
       : st.status === 'error' ? st.error : '';
+    if (st.lastFailure && st.status === 'available') { el.textContent += ` Last try didn't install: ${st.lastFailure}`; el.style.color = 'var(--danger)'; }
     go.style.display = st.status === 'available' || (st.status === 'error' && st.url) ? '' : 'none';
     const bar = $('#updateBar');
     if (st.status === 'available' && !showUpdate.later) { $('#updateBarText').textContent = `Orbit ${st.latest} is out.`; $('#updateBarGo').style.display = ''; bar.classList.add('show'); }
     else if (st.status === 'downloading' && bar.classList.contains('show')) { $('#updateBarText').textContent = `Downloading ${st.latest}… ${st.progress || 0}%`; $('#updateBarGo').style.display = 'none'; }
-    else if (st.status === 'installing') { $('#updateBarText').textContent = 'Installing. Orbit reopens in a minute.'; $('#updateBarGo').style.display = 'none'; bar.classList.add('show'); }
+    else if (st.status === 'updated' && !showUpdate.shown) { showUpdate.shown = true; toast(`Updated to Orbit ${st.current}`); }
+    else if (st.status === 'error' && st.lastFailure && !showUpdate.later) { $('#updateBarText').textContent = `The update didn't install. Open Settings → Updates.`; $('#updateBarGo').style.display = 'none'; bar.classList.add('show'); }
+    else if (st.status === 'installing') { $('#updateBarText').textContent = 'Installing. Orbit reopens in a few seconds.'; $('#updateBarGo').style.display = 'none'; bar.classList.add('show'); }
     else if (st.status !== 'downloading') bar.classList.remove('show');
   }
   api.on('update:state', showUpdate);

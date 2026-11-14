@@ -368,7 +368,7 @@ ${this._recentTranscript(14) || '(none)'}
     try {
       if (!s.apiKey) throw new Error('Orbit needs a model first. Open Settings.');
       const res = await this._loop({
-        lane: w.id, emit, system: () => this._systemPrompt('worker'), context: () => thread.slice(-60), append: (m) => thread.push(m), tools,
+        lane: w.id, emit, system: () => this._systemPrompt('worker'), context: () => Agent.compactContext(thread, { max: 60, budget: Number(s.contextBudget) || 24000 }), append: (m) => thread.push(m), tools,
         schemas: schemasFor(n => !NO_WORKER.has(n)), model: voice ? (s.voiceModel || s.fastModel || s.model) : s.model,
         maxSteps: Number(s.maxSteps) || 25, streamToUI: false, onStep: (label) => { w.steps.push(label); this._workerEvent(w, 'running', { step: label }); },
       });
@@ -553,17 +553,69 @@ ${self.slice(0, 3000)}
 ${files}`;
   }
 
-  _contextMessages(thread, max = 50) {
-    // Keep the most recent messages, starting on a user turn so tool calls stay paired.
-    let start = Math.max(0, thread.length - max);
-    while (start < thread.length && thread[start].role !== 'user') start++;
-    return thread.slice(start).map(m => {
+  _contextMessages(thread, max = 50, budget) {
+    return Agent.compactContext(thread, { max, budget: budget || Number(this.store.getSettings().contextBudget) || 24000 });
+  }
+
+  // What the model sees each step. Input used to grow without bound (50 messages, 14k-char tool
+  // dumps, every old screenshot), which burned daily quotas and tripped providers' input caps.
+  // Now: always keep the task's own request, keep the newest messages whole, shrink older tool
+  // output, keep only the newest screenshot, and stop at a token budget (about 4 chars a token).
+  static compactContext(thread, { max = 50, budget = 24000 } = {}) {
+    const est = (m) => {
+      const c = m.content;
+      let n = typeof c === 'string' ? c.length : Array.isArray(c) ? c.reduce((a, p) => a + (p.type === 'text' ? String(p.text || '').length : 3000), 0) : 0;
+      if (m.tool_calls) n += JSON.stringify(m.tool_calls).length;
+      return Math.ceil(n / 4) + 4;
+    };
+    const clean = (m) => {
       const out = { role: m.role, content: m.content ?? null };
       if (m.tool_calls) out.tool_calls = m.tool_calls;
       if (m.tool_call_id) out.tool_call_id = m.tool_call_id;
       if (m.name && m.role === 'tool') out.name = m.name;
       return out;
-    });
+    };
+    const isReq = (m) => m.role === 'user' && !m.hidden && typeof m.content === 'string';
+    const shrink = (t, n) => t.length > n ? t.slice(0, Math.floor(n * 0.7)) + `\n…[${t.length - n} chars trimmed]…\n` + t.slice(-Math.floor(n * 0.3)) : t;
+
+    let start = Math.max(0, thread.length - max);
+    // Never cut between a tool call and its results.
+    while (start > 0 && start < thread.length && thread[start].role === 'tool') start--;
+    let win = thread.slice(start).map(clean);
+    const firstIdx = thread.length - win.length;
+    // The request that started this task must stay in view, or the model forgets what it's doing.
+    let lastReq = -1;
+    for (let i = thread.length - 1; i >= 0; i--) if (isReq(thread[i])) { lastReq = i; break; }
+    const pinned = lastReq >= 0 && lastReq < firstIdx ? [clean(thread[lastReq])] : [];
+
+    // Screenshots: only the newest one stays.
+    let seenImg = false;
+    for (let i = win.length - 1; i >= 0; i--) {
+      const m = win[i];
+      if (Array.isArray(m.content) && m.content.some(p => p.type === 'image_url')) {
+        if (seenImg) m.content = '(Older screenshot removed to save space.)'; else seenImg = true;
+      }
+    }
+    // Tool output: newest 4 results up to 8k chars, older ones 1.2k.
+    let toolSeen = 0;
+    for (let i = win.length - 1; i >= 0; i--) {
+      const m = win[i];
+      if (m.role === 'tool' && typeof m.content === 'string') m.content = shrink(m.content, toolSeen++ < 4 ? 8000 : 1200);
+      else if (m.role === 'assistant' && typeof m.content === 'string' && i < win.length - 6) m.content = shrink(m.content, 3000);
+    }
+    // Budget: drop the oldest whole turns (a turn is an assistant message with its tool results).
+    const total = () => win.reduce((a, m) => a + est(m), 0) + pinned.reduce((a, m) => a + est(m), 0);
+    while (win.length > 2 && total() > budget) {
+      let cut = 1;
+      while (cut < win.length && win[cut].role === 'tool') cut++;
+      win = win.slice(cut);
+    }
+    // Drop leading tool results whose call is gone (providers reject them).
+    while (win.length && win[0].role === 'tool') win.shift();
+    // If still over, squeeze every tool result harder.
+    if (total() > budget) for (const m of win) if (m.role === 'tool' && typeof m.content === 'string') m.content = shrink(m.content, 600);
+    if (pinned.length && win[0] && win[0].role === 'user' && win[0].content === pinned[0].content) pinned.length = 0;
+    return [...pinned, ...win];
   }
 
   // ---------------- images ----------------

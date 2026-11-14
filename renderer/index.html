@@ -564,6 +564,7 @@
               </select>
             </label>
             <label>Daily token cap<input id="s-dailyTokenCap" type="number" min="0" step="100000" /><small class="muted" id="usageNote"></small></label>
+            <label>Context budget (tokens per step)<input id="s-contextBudget" type="number" min="4000" step="2000" /><small class="muted">How much history Orbit sends the model each step. Lower it if your provider has a small input limit or daily allowance.</small></label>
             <label>Max steps per task<input id="s-maxSteps" type="number" min="3" max="100" /></label>
             <label>Background tasks at once<input id="s-maxWorkers" type="number" min="1" max="6" /><small class="muted">Each one is a full copy of Orbit with its own browser tab. 3 is a good balance of speed and cost.</small></label>
             <label class="toggle"><input type="checkbox" id="s-voiceReplies" /><span></span>Speak replies out loud in Orbit's voice</label>

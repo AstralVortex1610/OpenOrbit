@@ -16,6 +16,7 @@ const DEFAULT_SETTINGS = {
   hotkey: 'Control+Shift+O',
   approvalMode: 'risky', // 'risky' | 'always' | 'never'
   dailyTokenCap: 2000000,
+  contextBudget: 24000, // max input tokens Orbit sends a model per step (older history is trimmed)
   maxSteps: 25,
   theme: 'dark',
   wakeWord: false,

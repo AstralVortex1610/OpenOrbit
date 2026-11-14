@@ -516,7 +516,7 @@
   $('#openMemFolder').onclick = () => api.openMemoryFolder();
 
   // ---------- settings ----------
-  const FIELDS = ['orbitVoice', 'orbitStt', 'orbitTts', 'orbitPhononVoice', 'orbitWinVoice', 'orbitPauseMs', 'liveEngine', 'liveGeminiVoice', 'liveOpenaiVoice', 'baseUrl', 'model', 'fastModel', 'voiceModel', 'browserChannel', 'phoneWhen', 'phoneIdleMinutes', 'ntfyServer', 'transcribeModel', 'userName', 'approvalMode', 'dailyTokenCap', 'maxSteps', 'hotkey', 'maxWorkers', 'imageModel', 'imageBaseUrl', 'googleClientId', 'visionModel'];
+  const FIELDS = ['orbitVoice', 'orbitStt', 'orbitTts', 'orbitPhononVoice', 'orbitWinVoice', 'orbitPauseMs', 'liveEngine', 'liveGeminiVoice', 'liveOpenaiVoice', 'baseUrl', 'model', 'fastModel', 'voiceModel', 'browserChannel', 'phoneWhen', 'phoneIdleMinutes', 'ntfyServer', 'transcribeModel', 'userName', 'approvalMode', 'dailyTokenCap', 'contextBudget', 'maxSteps', 'hotkey', 'maxWorkers', 'imageModel', 'imageBaseUrl', 'googleClientId', 'visionModel'];
   const TOGGLES = ['autoUpdate', 'talkFirst', 'autoCall', 'orbitGpu', 'wakeOpensLive', 'voiceReplies', 'closeToTray', 'startWithWindows', 'wakeWord', 'ntfyEnabled', 'telegramEnabled', 'osintBeta'];
   // Edits you haven't saved yet survive any refresh of this screen (a new ntfy topic,
   // Telegram pairing, Google connect...). Before, those refreshes wiped the whole form.

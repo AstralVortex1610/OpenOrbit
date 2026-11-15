@@ -263,7 +263,7 @@ ipcMain.handle('models:choices', () => agent.modelChoices());
 ipcMain.handle('models:pick', (_e, scope, tier) => {
   tier = ['', 'spark', 'pulse', 'surge'].includes(tier) ? tier : '';
   scope = String(scope || 'main');
-  if (scope === 'main') { store.saveSettings({ chatTier: tier }); agent.retarget('main'); agent.retarget('side-*'); }
+  if (scope === 'main') { store.saveSettings({ chatTier: '' }); agent.retarget('main'); agent.retarget('side-*'); }
   else if (scope.startsWith('proj:')) { hub.updateProject(scope.slice(5), { tier }); agent.retarget('proj-' + scope.slice(5)); }
   else if (scope.startsWith('orb:')) { orbiter.updateSession(scope.slice(4), { tier }); agent.retarget('orb-' + scope.slice(4)); }
   const t = agent.tierSettings(tier);

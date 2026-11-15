@@ -488,7 +488,7 @@ function buildTools(agent, lane = { id: 'main' }) {
         if (folder && !fs.existsSync(expand(folder, os.homedir()))) throw new Error(`Folder not found: ${folder}. Ask the user which folder.`);
         // Default to where the request came from: a project's own folder and model, or the chat's model.
         const st = agent.store.getSettings(); const proj = lane.project && agent.hub ? agent.hub.project(lane.project) : null;
-        const fromTier = tier !== undefined && tier !== null && tier !== '' ? tier : proj ? (proj.tier || '') : (st.chatTier || '');
+        const fromTier = tier !== undefined && tier !== null && tier !== '' ? tier : proj ? (proj.tier || '') : '';
         const dir = folder ? expand(folder, os.homedir()) : proj ? agent.hub.filesDir(lane.project) : undefined;
         sess = o.createSession({ folder: dir, tier: fromTier, mode, projectId: lane.project || null, name: String(task).split('\n')[0].slice(0, 40) });
       }

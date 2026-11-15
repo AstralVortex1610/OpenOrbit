@@ -248,11 +248,11 @@ class Agent {
       if (!quiet) emit({ type: 'user_message', id: msg.id, text: display || userText, images: (attachments || []).map(a => a.dataUrl), via: msg.via });
     }
 
-    const chatTier = !proactiveTask && s.chatTier ? this.tierSettings(s.chatTier) : null;
+    const chatTier = null; // main chat always uses the main model
     const pickMain = () => {
       const now = this.store.getSettings();
       if (proactiveTask) return { settings: now, model: now.fastModel || now.model };
-      const t = now.chatTier ? this.tierSettings(now.chatTier) : null;
+      const t = null;
       return t ? { settings: t.settings, model: t.model } : { settings: now, model: now.model };
     };
     const res = await this._loop({

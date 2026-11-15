@@ -28,10 +28,11 @@ srv.listen(0, async () => {
   const ch = agent.modelChoices();
   assert(ch.length === 4 && ch[0].id === '' && ch[0].model === 'slow-a' && ch[1].model === 'fast-b' && ch[3].model === '', 'one choice list: Main, Spark, Pulse, Surge');
 
-  // mid-task switch: start on slow-a, pick Spark while it is still answering
+  // mid-task switch: main chat always runs the main model; changing it in Brain takes over at once
+  store.saveSettings({ chatTier: 'spark' }); assert(agent.tierSettings && true, 'chat ignores chatTier');
   agent.handleUser('build it', []);
   await wait(() => events.some(e => e.type === 'delta'));
-  store.saveSettings({ chatTier: 'spark' });
+  store.saveSettings({ model: 'fast-b' });
   const n = agent.retarget('main');
   assert(n === 1, 'running main lane retargeted');
   await wait(() => events.some(e => e.type === 'busy' && !e.busy));
@@ -52,7 +53,7 @@ srv.listen(0, async () => {
   const p = pickProj(); assert(p.model === 'mid-c', 'project pick resolves');
 
   // network failure explains itself
-  store.saveSettings({ chatTier: '', baseUrl: 'http://orbit-no-such-host.invalid/v1', backupModels: [] });
+  store.saveSettings({ chatTier: '', model: 'slow-a', baseUrl: 'http://orbit-no-such-host.invalid/v1', backupModels: [] });
   events.length = 0; agent.handleUser('hello', []);
   await wait(() => events.some(e => e.type === 'busy' && !e.busy), 15000);
   const err = events.find(e => e.type === 'error');

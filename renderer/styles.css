@@ -807,3 +807,4 @@ body.proj-orbiter .view-chat .scroller, body.proj-orbiter .view-chat .composer-w
 .tier-line { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 8px; }
 .tier-line label { display: flex; flex-direction: column; gap: 5px; margin: 0; }
 .tier-line label span { font-size: 12.5px; font-weight: 600; } .tier-line label i { font-weight: 400; opacity: .6; font-style: normal; }
+.model-chip[hidden] { display: none; }

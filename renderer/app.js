@@ -435,7 +435,8 @@
   async function paintModelChip() {
     try { modelChoices = await api.models.choices(); } catch { modelChoices = []; }
     let tier = '';
-    if (scope === 'main') tier = (await api.getSettings()).chatTier || '';
+    $('#modelChip').hidden = scope === 'main'; // main chat always runs the main model
+    if (scope === 'main') return;
     else { const p = await api.projects.get(scope); tier = (p && p.tier) || ''; }
     const c = modelChoices.find(x => x.id === tier) || modelChoices[0] || { name: 'Main', model: '' };
     const main = modelChoices[0] || {};

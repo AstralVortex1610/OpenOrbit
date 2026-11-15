@@ -701,6 +701,30 @@ ${files}`;
     if (err.status) return [401, 402, 403, 404, 408, 409, 413, 429].includes(err.status) || err.status >= 500 || /quota|rate.?limit|limit|exceed|insufficient|credit|billing|overload|capacity|unavailable|not found|does not exist/i.test(m);
     return /fetch failed|ECONN|ETIMEDOUT|ENOTFOUND|socket|network|terminated/i.test(m);
   }
+  // Gemini's OpenAI-compatible API rejects an OBJECT schema with no properties (HTTP 400),
+  // and some JSON-schema keywords. Send it a cleaned copy.
+  static _geminiTools(tools) {
+    const DROP = new Set(['additionalProperties', '$schema', 'default', 'examples', 'const', 'minItems', 'maxItems', 'pattern']);
+    const clean = (o) => {
+      if (Array.isArray(o)) return o.map(clean);
+      if (!o || typeof o !== 'object') return o;
+      const out = {};
+      for (const [k, v] of Object.entries(o)) {
+        if (DROP.has(k) && typeof v !== 'object') continue;
+        if (k === 'additionalProperties') continue;
+        out[k] = k === 'properties' ? Object.fromEntries(Object.entries(v || {}).map(([pk, pv]) => [pk, clean(pv)])) : clean(v);
+      }
+      if (Array.isArray(out.type)) out.type = out.type.find(x => x !== 'null') || 'string';
+      return out;
+    };
+    return tools.map(t => {
+      const f = { ...t.function };
+      const p = f.parameters;
+      if (!p || (p.type === 'object' && !Object.keys(p.properties || {}).length)) delete f.parameters;
+      else f.parameters = clean(p);
+      return { ...t, function: f };
+    });
+  }
   async _completeChain(s, model, messages, msgId, streamToUI, ctl, schemas, emit) {
     const cool = this._cool || (this._cool = new Map());
     const all = this._chain(s, model);
@@ -728,7 +752,9 @@ ${files}`;
   async _complete(s, messages, msgId, streamToUI, withUsage = true, ctl, schemas, emit) {
     emit = emit || this.emit;
     ctl = ctl || new AbortController();
-    const body = { model: s.model, messages, tools: schemas || TOOL_SCHEMAS, tool_choice: 'auto', stream: true };
+    const google = /generativelanguage\.googleapis\.com/i.test(String(s.baseUrl || ''));
+    const tools = schemas || TOOL_SCHEMAS;
+    const body = { model: s.model, messages, tools: google ? Agent._geminiTools(tools) : tools, tool_choice: 'auto', stream: true };
     if (withUsage) body.stream_options = { include_usage: true };
     const r = await fetch(this._url(s, '/chat/completions'), { method: 'POST', headers: this._headers(s), body: JSON.stringify(body), signal: ctl.signal });
     if (!r.ok) {
@@ -773,6 +799,7 @@ ${files}`;
             if (tc.id) calls[i].id = tc.id;
             if (tc.function && tc.function.name) calls[i].function.name += tc.function.name;
             if (tc.function && tc.function.arguments) calls[i].function.arguments += tc.function.arguments;
+            if (tc.extra_content) calls[i].extra_content = tc.extra_content; // Gemini thought_signature: must go back with the call
           }
         }
       }

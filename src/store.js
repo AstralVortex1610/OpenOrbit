@@ -59,6 +59,19 @@ const DEFAULT_SETTINGS = {
 };
 const LIST_KEYS = new Set(['backupModels', 'mcpServers', 'apiConnectors']);
 function sleepSync(ms) { try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } catch {} }
+
+// Google AI Studio: people paste the native base URL (or a "models/..." name). Orbit speaks the
+// OpenAI-compatible API, which lives under /v1beta/openai, so fix both quietly.
+function fixGoogleUrl(u) {
+  const s = String(u || '').trim();
+  if (!/generativelanguage\.googleapis\.com/i.test(s) || /\/openai\/?$/i.test(s)) return s;
+  return 'https://generativelanguage.googleapis.com/v1beta/openai';
+}
+function fixModelName(m, u) {
+  const s = String(m || '').trim();
+  return /generativelanguage\.googleapis\.com/i.test(String(u || '')) ? s.replace(/^models\//, '') : s;
+}
+
 const SECRET_KEYS = ['liveGeminiKey', 'liveOpenaiKey', 'googleClientSecret', 'googleRefresh', 'netlifyToken', 'imageApiKey', 'hibpKey'];
 
 const DEFAULT_TASKS = [
@@ -154,10 +167,12 @@ class Store {
         s.apiKey = this.safe && this.safe.isEncryptionAvailable() ? this.safe.decryptString(buf) : buf.toString('utf8');
       } catch { s.apiKey = ''; }
     }
+    s.baseUrl = fixGoogleUrl(s.baseUrl); s.model = fixModelName(s.model, s.baseUrl);
     for (const k of SECRET_KEYS) { s[k] = ''; if (s[k + 'Enc']) { try { s[k] = this._dec(s[k + 'Enc']); } catch { s[k] = ''; } } }
     s.backupModels = (Array.isArray(s.backupModels) ? s.backupModels : []).filter(b => b && b.model).map(b => {
       let apiKey = ''; if (b.apiKeyEnc) { try { apiKey = this._dec(b.apiKeyEnc); } catch {} }
-      return { id: b.id, model: b.model, baseUrl: b.baseUrl || '', apiKey };
+      const bu = fixGoogleUrl(b.baseUrl || '');
+      return { id: b.id, model: fixModelName(b.model, bu || s.baseUrl), baseUrl: bu, apiKey };
     });
     s.mcpServers = (Array.isArray(s.mcpServers) ? s.mcpServers : []).map(m => {
       let sec = {}; if (m.secretEnc) { try { sec = JSON.parse(this._dec(m.secretEnc)); } catch {} }
@@ -309,4 +324,4 @@ class Store {
   }
 }
 
-module.exports = { Store, DEFAULT_SETTINGS };
+module.exports = { fixGoogleUrl, fixModelName, Store, DEFAULT_SETTINGS };

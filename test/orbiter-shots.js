@@ -56,6 +56,14 @@ app.whenReady().then(async () => {
   await orb.webContents.executeJavaScript(`(() => { document.querySelector('.th[data-id="orbit-light"]').click(); })()`);
   await wait(500); await orb.webContents.executeJavaScript(`document.querySelector('#tabs [data-t="checkpoints"]').click()`); await wait(300); await shot(orb, 'orbiter-4-light.png');
   await orb.webContents.executeJavaScript(`document.querySelector('.th') ; document.getElementById('modeChip').click()`); await wait(400); await shot(orb, 'orbiter-5-modes.png');
+  if (process.env.SCENES) {
+    for (const id of ['scene:paris-night', 'scene:mount-fuji', 'scene:racing-red', 'scene:snowfall', 'scene:orbit-nebula', 'scene:retro-95']) {
+      await orb.webContents.executeJavaScript(`(() => { document.getElementById('overlay').hidden = true; document.getElementById('themeBtn').click(); document.querySelector('.th[data-id="${id}"]').click(); document.querySelector('#tabs [data-t="todo"]').click(); })()`);
+      await wait(700); await shot(orb, 'scene-' + id.slice(6) + '.png');
+    }
+    await orb.webContents.executeJavaScript(`document.getElementById('themeBtn').click()`); await wait(600); await shot(orb, 'scene-picker.png');
+    app.exit(0); return;
+  }
   // Orbit settings: the Orbit models card
   await main.webContents.executeJavaScript(`document.querySelector('[data-view="settings"]').click()`); await wait(1200);
   await main.webContents.executeJavaScript(`document.querySelector('.tiers').scrollIntoView({ block: 'center' })`); await wait(400); await shot(main, 'orbiter-6-models.png');

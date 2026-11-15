@@ -27,22 +27,35 @@
   const toast = (t) => { const d = document.createElement('div'); d.className = 'toast'; d.textContent = t; document.body.appendChild(d); setTimeout(() => d.remove(), 2400); };
 
   // ---------- theme ----------
+  const SCENES = window.ORBITER_BACKDROPS || [];
   function applyTheme(id) {
     const root = document.documentElement; root.removeAttribute('style');
+    document.body.classList.remove('scene', ...SCENES.map(x => x.cls).filter(Boolean));
+    const bd = $('#backdrop'); bd.innerHTML = '';
     const custom = (meta.themes || []).find(t => t.id === id);
-    if (custom) { root.dataset.theme = custom.base; for (const [k, v] of Object.entries(custom.overrides || {})) root.style.setProperty(k.startsWith('--') ? k : '--' + k, v); }
-    else root.dataset.theme = THEMES.some(t => t.id === id) ? id : 'orbit-dark';
-    $('#themeName').textContent = (custom || THEMES.find(t => t.id === id) || THEMES[0]).name;
+    const scene = SCENES.find(t => t.id === id) || (custom && SCENES.find(t => t.id === custom.scene));
+    const setVars = (o) => { for (const [k, v] of Object.entries(o || {})) root.style.setProperty(k.startsWith('--') ? k : '--' + k, v); };
+    if (scene) { root.dataset.theme = scene.base; setVars(scene.overrides); bd.innerHTML = scene.svg; document.body.classList.add('scene'); if (scene.cls) document.body.classList.add(scene.cls); }
+    if (custom) {
+      if (!scene) root.dataset.theme = custom.base;
+      setVars(custom.overrides);
+      if (custom.backdropUrl) { bd.innerHTML = ''; const img = new Image(); img.src = custom.backdropUrl; bd.appendChild(img); document.body.classList.add('scene'); }
+    } else if (!scene) root.dataset.theme = THEMES.some(t => t.id === id) ? id : 'orbit-dark';
+    $('#themeName').textContent = (custom || scene || THEMES.find(t => t.id === id) || THEMES[0]).name;
   }
   function themePicker() {
     const all = [...THEMES, ...(meta.themes || [])];
     const sel = meta.settings.orbiterTheme || 'orbit-dark';
+    const sceneCards = SCENES.map(t => `<button class="th ${t.id === sel ? 'on' : ''}" data-id="${esc(t.id)}"><div class="pv scene">${t.svg}<div class="mini"><i style="width:80%"></i><i style="width:60%"></i><i style="width:70%;background:${esc(t.overrides.accent || '#c4673a')}"></i></div></div><div class="nm">${esc(t.name)}</div></button>`).join('');
+    const rootStyle = document.documentElement.style.cssText; document.documentElement.style.cssText = '';
     const prev = (t) => { const tmp = document.createElement('div'); tmp.dataset.theme = t.base || t.id; document.body.appendChild(tmp); const cs = getComputedStyle(tmp); const g = (k) => (t.overrides && (t.overrides[k] || t.overrides['--' + k])) || cs.getPropertyValue('--' + k).trim(); const v = { bg: g('bg'), raised: g('raised'), text: g('text'), add: g('add'), del: g('del'), accent: g('accent'), dim: g('dim') }; tmp.remove(); return v; };
-    overlay(`<h2>Theme</h2><p class="sub">Hover to preview, click to keep. Custom themes are JSON files in your themes folder; they reload when you reopen this.</p>
-      <div class="themes">${all.map(t => { const c = prev(t); return `<button class="th ${t.id === sel ? 'on' : ''}" data-id="${esc(t.id)}"><div class="pv" style="background:${c.bg};color:${c.dim}"><div class="l" style="width:70%;background:${c.raised}"></div><div class="l" style="width:85%;background:${c.add};opacity:.55"></div><div class="l" style="width:60%;background:${c.del};opacity:.55"></div><div class="l" style="width:35%;background:${c.accent}"></div></div><div class="nm">${esc(t.name)}${t.id.startsWith('custom:') ? ' · custom' : ''}</div></button>`; }).join('')}</div>
+    const colourCards = all.map(t => [t, prev(t)]); document.documentElement.style.cssText = rootStyle;
+    overlay(`<h2>Theme</h2><p class="sub">Hover to preview, click to keep. Scenes put art behind the whole window. Custom themes are JSON files in your themes folder and can use your own picture.</p>
+      <div class="th-sec">Scenes</div><div class="themes">${sceneCards}</div><div class="th-sec">Colours</div>
+      <div class="themes">${colourCards.map(([t, c]) => { return `<button class="th ${t.id === sel ? 'on' : ''}" data-id="${esc(t.id)}"><div class="pv" style="background:${c.bg};color:${c.dim}"><div class="l" style="width:70%;background:${c.raised}"></div><div class="l" style="width:85%;background:${c.add};opacity:.55"></div><div class="l" style="width:60%;background:${c.del};opacity:.55"></div><div class="l" style="width:35%;background:${c.accent}"></div></div><div class="nm">${esc(t.name)}${t.id.startsWith('custom:') ? ' · custom' : ''}</div></button>`; }).join('')}</div>
       <div class="foot"><button class="btn" id="newTheme">New custom theme…</button><button class="btn" id="thClose">Done</button></div>`, (d) => {
       d.querySelectorAll('.th').forEach(b => { b.onmouseenter = () => applyTheme(b.dataset.id); b.onclick = async () => { meta.settings.orbiterTheme = b.dataset.id; await O.saveSettings({ orbiterTheme: b.dataset.id }); closeOverlay(); applyTheme(b.dataset.id); }; });
-      d.querySelector('.themes').onmouseleave = () => applyTheme(meta.settings.orbiterTheme);
+      d.querySelectorAll('.themes').forEach(g => g.onmouseleave = () => applyTheme(meta.settings.orbiterTheme));
       $('#thClose', d).onclick = closeOverlay;
       $('#newTheme', d).onclick = () => customTheme();
     });
@@ -51,13 +64,14 @@
     overlay(`<h2>New custom theme</h2><p class="sub">Start from a built-in theme and override any colour token (bg, panel, raised, text, dim, accent, add, del, warn…). Colours can be #hex or rgb().</p>
       <div class="field"><label>Name</label><input id="ctName" value="My theme" /></div>
       <div class="field"><label>Based on</label><input id="ctBase" value="${esc(meta.settings.orbiterTheme && !meta.settings.orbiterTheme.startsWith('custom:') ? meta.settings.orbiterTheme : 'orbit-dark')}" /></div>
+      <div class="field"><label>Scene art (optional: a scene name like scene:paris-night, or put "backdrop": "my-picture.jpg" in the JSON file and drop the picture in the themes folder)</label><input id="ctScene" placeholder="none" /></div>
       <div class="field"><label>Overrides (JSON)</label><textarea id="ctOv">{\n  "accent": "#5fb3a8",\n  "bg": "#101614"\n}</textarea></div>
       <div class="foot"><button class="btn" id="ctCancel">Cancel</button><button class="btn pri" id="ctSave">Save and use</button></div>`, (d) => {
       $('#ctCancel', d).onclick = closeOverlay;
       $('#ctSave', d).onclick = async () => {
         let ov; try { ov = JSON.parse($('#ctOv', d).value || '{}'); } catch { return toast('Overrides must be valid JSON'); }
         const name = $('#ctName', d).value.trim() || 'My theme';
-        const id = await O.saveTheme(name, { name, base: $('#ctBase', d).value.trim(), overrides: ov });
+        const id = await O.saveTheme(name, { name, base: $('#ctBase', d).value.trim(), overrides: ov, scene: $('#ctScene', d).value.trim() || undefined });
         meta = await O.meta(); meta.settings.orbiterTheme = id; await O.saveSettings({ orbiterTheme: id }); applyTheme(id); closeOverlay(); toast('Theme saved');
       };
     });

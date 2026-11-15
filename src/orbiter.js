@@ -354,14 +354,22 @@ ${mem ? '\nProject and user memory (follow it):\n' + mem : ''}${todos}`;
     try {
       for (const f of fs.readdirSync(this.themesDir)) {
         if (!f.endsWith('.json')) continue;
-        try { const j = JSON.parse(fs.readFileSync(path.join(this.themesDir, f), 'utf8')); custom.push({ id: 'custom:' + f.replace(/\.json$/, ''), name: j.name || f.replace(/\.json$/, ''), base: j.base || 'orbit-dark', overrides: j.overrides || {} }); } catch {}
+        try {
+          const j = JSON.parse(fs.readFileSync(path.join(this.themesDir, f), 'utf8'));
+          let backdropUrl = '';
+          if (j.backdrop) { // a picture next to the JSON file, shown behind the window
+            const pic = path.join(this.themesDir, path.basename(String(j.backdrop))); const ext = path.extname(pic).slice(1).toLowerCase().replace('jpg', 'jpeg');
+            if (['png', 'jpeg', 'webp', 'gif'].includes(ext) && fs.existsSync(pic) && fs.statSync(pic).size < 6e6) backdropUrl = `data:image/${ext};base64,${fs.readFileSync(pic).toString('base64')}`;
+          }
+          custom.push({ id: 'custom:' + f.replace(/\.json$/, ''), name: j.name || f.replace(/\.json$/, ''), base: j.base || 'orbit-dark', overrides: j.overrides || {}, scene: j.scene || '', backdropUrl });
+        } catch {}
       }
     } catch {}
     return custom;
   }
   saveTheme(slug, data) {
     slug = String(slug || 'my-theme').toLowerCase().replace(/[^a-z0-9-]+/g, '-').slice(0, 40) || 'my-theme';
-    fs.writeFileSync(path.join(this.themesDir, slug + '.json'), JSON.stringify({ name: data.name || slug, base: data.base || 'orbit-dark', overrides: data.overrides || {} }, null, 2));
+    fs.writeFileSync(path.join(this.themesDir, slug + '.json'), JSON.stringify({ name: data.name || slug, base: data.base || 'orbit-dark', ...(data.scene ? { scene: String(data.scene) } : {}), ...(data.backdrop ? { backdrop: String(data.backdrop) } : {}), overrides: data.overrides || {} }, null, 2));
     return 'custom:' + slug;
   }
 }

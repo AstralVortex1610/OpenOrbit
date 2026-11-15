@@ -1,5 +1,5 @@
 /* Orbiter: Orbit's coding agent. Themes are token sets; custom themes override any token. */
-:root, [data-theme="orbit-dark"] {
+:root, [data-theme="orbit-dark"], [data-theme="dark-daltonized"], [data-theme="midnight"], [data-theme="high-contrast"] {
   --bg: #141311; --panel: #1a1917; --raised: #23211e; --hover: #2c2925; --line: rgba(245,240,232,.08); --line2: rgba(245,240,232,.14);
   --text: #f3eee6; --dim: #a59d92; --faint: #6f685f;
   --accent: #c4673a; --accent2: #e4a270; --accent-deep: #ae4e27; --accent-soft: rgba(196,103,58,.14);
@@ -217,3 +217,52 @@ textarea::placeholder { color: var(--faint); }
 .field textarea { min-height: 70px; font: 12px "Cascadia Code", Consolas, monospace; }
 .toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: var(--raised); border: 1px solid var(--line2); padding: 8px 14px; border-radius: 10px; z-index: 30; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
 [hidden] { display: none !important; }
+
+/* ---------- scene themes: illustrated backdrop behind the whole window ---------- */
+.app { position: relative; }
+.backdrop { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; display: none; }
+.backdrop > svg, .backdrop > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.backdrop::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent 18%, color-mix(in srgb, var(--bg) 34%, transparent) 30%, color-mix(in srgb, var(--bg) 34%, transparent) 66%, transparent 78%); }
+.side, .main, .pane { position: relative; z-index: 1; }
+body.scene .backdrop { display: block; }
+body.scene .main { background: transparent; }
+body.scene .side, body.scene .pane, body.scene .tb { background: color-mix(in srgb, var(--bg) 42%, transparent); backdrop-filter: blur(3px) saturate(1.1); }
+body.scene .sess.on { background: color-mix(in srgb, var(--raised) 70%, transparent); }
+body.scene .composer, body.scene .diff .card, body.scene .ask .card, body.scene .u .b { backdrop-filter: blur(12px); }
+body.scene .a .md, body.scene .tool .row, body.scene .hint { text-shadow: 0 1px 2px rgba(0,0,0,.55); }
+.scene-tag { position: absolute; right: 10px; bottom: 34px; font-size: 10px; color: rgba(255,255,255,.4); z-index: 1; }
+/* motion (off when the OS asks for reduced motion) */
+.backdrop .tw { animation: tw 3.6s ease-in-out infinite; }
+@keyframes tw { 50% { opacity: .15; } }
+.backdrop .sweep { animation: sweep 9s ease-in-out infinite alternate; }
+@keyframes sweep { from { transform: rotate(-7deg); } to { transform: rotate(14deg); } }
+.backdrop .flake { animation: fall linear infinite; }
+@keyframes fall { to { transform: translate(-40px, 720px); } }
+.backdrop .petal { animation: petal 9s ease-in-out infinite; }
+@keyframes petal { 0% { transform: translate(0,0) rotate(0); opacity: 0; } 20% { opacity: .8; } 100% { transform: translate(-120px, 220px) rotate(220deg); opacity: 0; } }
+.backdrop .spin { animation: spin 40s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.backdrop .comet { animation: comet 7s ease-in infinite; }
+@keyframes comet { 0%, 70% { transform: translate(0,0); opacity: 0; } 75% { opacity: 1; } 100% { transform: translate(1100px, 480px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .backdrop * { animation: none !important; } }
+/* theme picker: scene cards */
+.th-sec { margin: 14px 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--faint); }
+.th .pv.scene { padding: 0; position: relative; overflow: hidden; height: 92px; }
+.th .pv.scene svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.th .pv.scene .mini { position: absolute; left: 10px; right: 34%; top: 14px; display: flex; flex-direction: column; gap: 4px; }
+.th .pv.scene .mini i { height: 7px; border-radius: 3px; background: rgba(255,255,255,.55); }
+/* Retro 95: bevels, square corners, system font */
+body.retro95, body.retro95 textarea { font-family: Tahoma, "MS Sans Serif", "Segoe UI", sans-serif; }
+body.retro95 .tb { background: linear-gradient(90deg, #000080, #1084d0); color: #fff; }
+body.retro95 .tb-sess, body.retro95 .tb-sess .path, body.retro95 .tb-win button { color: #fff; }
+body.retro95 .side, body.retro95 .pane { background: #c0c0c0; backdrop-filter: none; }
+body.retro95 .tool .ic { background: #c0c0c0; border-color: #808080; color: #000; }
+body.retro95 .new, body.retro95 .btn, body.retro95 .chip, body.retro95 .send, body.retro95 .sess.on, body.retro95 .composer, body.retro95 .diff .card, body.retro95 .ask .card, body.retro95 .u .b, body.retro95 .dlg, body.retro95 .th, body.retro95 .opt, body.retro95 .slash {
+  border-radius: 0 !important; border: 0 !important; background: #c0c0c0; color: #000;
+  box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #fff, inset -2px -2px #808080, inset 2px 2px #dfdfdf !important; }
+body.retro95 .composer textarea, body.retro95 .u .b, body.retro95 .diff .body { background: #fff; }
+body.retro95 .send, body.retro95 .btn.pri { color: #000; }
+body.retro95 .a .md, body.retro95 .tool .row, body.retro95 .hint { text-shadow: none; color: #fff; }
+body.retro95 .a .md code { color: #000; }
+body.retro95 .ask .t, body.retro95 .ask pre { color: #000; }
+body.retro95 .backdrop::after { display: none; }

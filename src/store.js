@@ -16,6 +16,8 @@ const DEFAULT_SETTINGS = {
   hotkey: 'Control+Shift+O',
   approvalMode: 'risky', // 'risky' | 'always' | 'never'
   dailyTokenCap: 2000000,
+  chatThinking: 'quick', // quick | default | deep: how long reasoning models think in chat, projects and tasks
+  orbiterThinking: 'default', // same, for Orbiter coding sessions
   contextBudget: 24000, // max input tokens Orbit sends a model per step (older history is trimmed)
   maxSteps: 25,
   theme: 'dark',

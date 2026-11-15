@@ -14,7 +14,7 @@ const { Google } = require('./google');
 const { Passwords } = require('./passwords');
 const { Hub, install: installHub } = require('./hub');
 
-const PARALLEL_SAFE = new Set(['orbiter_status', 'password_list', 'read_file', 'list_dir', 'web_search', 'fetch_url', 'memory_list', 'memory_read', 'skill_read', 'list_tasks', 'windows_list', 'screenshot', 'task_status', 'gmail_search', 'gmail_read', 'calendar_events', 'start_task', 'view_image', 'connectors_list', 'image_metadata', 'place_lookup', 'whois_lookup', 'dns_lookup', 'subdomains', 'ip_lookup', 'site_tech', 'wayback', 'org_lookup', 'public_figure']);
+const PARALLEL_SAFE = new Set(['glob', 'grep', 'web_fetch', 'orbiter_status', 'password_list', 'read_file', 'list_dir', 'web_search', 'fetch_url', 'memory_list', 'memory_read', 'skill_read', 'list_tasks', 'windows_list', 'screenshot', 'task_status', 'gmail_search', 'gmail_read', 'calendar_events', 'start_task', 'view_image', 'connectors_list', 'image_metadata', 'place_lookup', 'whois_lookup', 'dns_lookup', 'subdomains', 'ip_lookup', 'site_tech', 'wayback', 'org_lookup', 'public_figure']);
 const SIDE_TOOLS = new Set(['orbiter_status', 'orbiter_handoff', 'web_search', 'fetch_url', 'read_file', 'list_dir', 'memory_list', 'memory_read', 'memory_append', 'skill_read', 'list_tasks', 'open', 'task_status', 'start_task', 'stop_task', 'tell_main', 'forward_to_main', 'password_save', 'password_list', 'gmail_search', 'gmail_read', 'calendar_events', 'notify_user', 'schedule_task']);
 const NO_WORKER = new Set(['start_task', 'wait_tasks', 'tell_main', 'forward_to_main', 'stop_task', 'project_brief']);
 const NO_MAIN = new Set(['tell_main', 'forward_to_main', 'project_brief']);
@@ -258,7 +258,7 @@ class Agent {
     const res = await this._loop({
       lane: 'main', emit, settings: chatTier ? chatTier.settings : undefined, pick: pickMain,
       system: () => this._systemPrompt(proactiveTask ? 'proactive' : 'main'),
-      context: () => this._contextMessages(this.store.getThread(), 50),
+      context: () => this._contextMessages(this.store.getThread(), 50, undefined, 'main'),
       append: (m) => this._append(m),
       tools: this.tools,
       schemas: schemasFor(n => !NO_MAIN.has(n)),
@@ -387,7 +387,7 @@ ${this._recentTranscript(14) || '(none)'}
     try {
       if (!s.apiKey) throw new Error('Orbit needs a model first. Open Settings.');
       const res = await this._loop({
-        lane: w.id, emit, system: () => this._systemPrompt('worker'), context: () => Agent.compactContext(thread, { max: 60, budget: Number(s.contextBudget) || 24000 }), append: (m) => thread.push(m), tools,
+        lane: w.id, emit, system: () => this._systemPrompt('worker'), context: () => Agent.compactContext(thread, { max: 60, budget: Number(s.contextBudget) || 24000, state: w.ctx || (w.ctx = {}) }), append: (m) => thread.push(m), tools,
         schemas: schemasFor(n => !NO_WORKER.has(n)), model: voice ? (s.voiceModel || s.fastModel || s.model) : s.model,
         maxSteps: Number(s.maxSteps) || 25, streamToUI: false, onStep: (label) => { w.steps.push(label); this._workerEvent(w, 'running', { step: label }); },
       });
@@ -439,13 +439,19 @@ ${this._recentTranscript(14) || '(none)'}
     this.ctls.set(lane, ctl);
     const steps = this.stepCtls || (this.stepCtls = new Map());
     let retries = 0;
+    // Speed: keep the system prompt identical across a task's steps so providers can reuse their
+    // cache of it. Clock, todo and status lines change every step; the rest only on real changes.
+    const volatile = /^(- Now: .*|Current todo list:[\s\S]*?)$/gm;
+    let sysCache = null;
+    const sys = () => { const v = system(); const k = v.replace(volatile, '').replace(/^- \[(pending|in_progress|completed)\] .*$/gm, ''); if (!sysCache || sysCache.k !== k) sysCache = { k, v }; return sysCache.v; };
     try {
     for (let step = 0; step < maxSteps; step++) {
-      const { settings: s, model: m } = choose();
+      const { settings: sPicked, model: m } = choose();
+      const s = { ...sPicked, _effort: String(lane).startsWith('orb-') ? sPicked.orbiterThinking : sPicked.chatThinking, _lane: lane };
       const usage = this.store.getUsage();
       if (s.dailyTokenCap && usage.tokensToday >= s.dailyTokenCap) throw new Error(`Daily token cap reached (${usage.tokensToday.toLocaleString()}). Raise it in Settings to keep going.`);
       const msgId = uid();
-      const messages = [{ role: 'system', content: system() }, ...context()];
+      const messages = [{ role: 'system', content: sys() }, ...context()];
       const stepCtl = new AbortController();
       const relay = () => stepCtl.abort();
       ctl.signal.addEventListener('abort', relay);
@@ -490,9 +496,14 @@ ${this._recentTranscript(14) || '(none)'}
         return { call, name, text, image: result.image, file: result.file };
       };
       // Read-only calls in the same step run at once; anything that acts runs in order.
-      const parallel = res.toolCalls.length > 1 && res.toolCalls.every(c => PARALLEL_SAFE.has(c.function.name) || (this.connectors && this.connectors.isReadOnly(c.function.name)));
-      const results = parallel ? await Promise.all(res.toolCalls.map(runCall)) : [];
-      if (!parallel) for (const call of res.toolCalls) { results.push(await runCall(call)); if (ctl.signal.aborted) break; }
+      // Runs of read-only calls go at once; anything that acts waits its turn, in order.
+      const safe = (c) => PARALLEL_SAFE.has(c.function.name) || !!(this.connectors && this.connectors.isReadOnly(c.function.name));
+      const results = [];
+      for (let i = 0; i < res.toolCalls.length && !ctl.signal.aborted;) {
+        if (!safe(res.toolCalls[i])) { results.push(await runCall(res.toolCalls[i])); i++; continue; }
+        let j = i; while (j < res.toolCalls.length && safe(res.toolCalls[j])) j++;
+        results.push(...await Promise.all(res.toolCalls.slice(i, j).map(runCall))); i = j;
+      }
       const images = [];
       for (const r of results) { append({ role: 'tool', tool_call_id: r.call.id, name: r.name, content: r.text, at: Date.now(), ...(r.file ? { ui: true } : {}) }); if (r.image) images.push({ type: 'image_url', image_url: { url: r.image } }); }
       // Keep every tool call answered, even if we stopped partway.
@@ -541,6 +552,11 @@ ${this._recentTranscript(14) || '(none)'}
 - Take a side: give one recommendation and why. Be warm but never gushing. No "Great question", no "I'd be happy to help".
 - Be honest about what you are: an AI agent, not a person. Never invent facts, files, or results.
 - Use markdown sparingly: short lists, tables for comparisons, code blocks for code.
+
+# Speed
+- The user hates waiting. Answer straight away when you already know; use tools only when they change the answer.
+- Put independent lookups (reads, searches, fetches) in ONE step as several tool calls; they run at the same time.
+- Never repeat a call whose result you already have.
 
 # How you work
 - You have tools to run commands on this ${process.platform === 'win32' ? 'Windows (PowerShell)' : process.platform} machine, read and write files, search and read the web, open apps and links, take screenshots, keep memory, use skills, schedule tasks, and message the user.
@@ -623,15 +639,22 @@ ${self.slice(0, 3000)}
 ${files}`;
   }
 
-  _contextMessages(thread, max = 50, budget) {
-    return Agent.compactContext(thread, { max, budget: budget || Number(this.store.getSettings().contextBudget) || 24000 });
+  _contextMessages(thread, max = 50, budget, key) {
+    const states = this._ctxStates || (this._ctxStates = new Map());
+    let state; if (key) { state = states.get(key); if (!state) states.set(key, state = {}); }
+    return Agent.compactContext(thread, { max, budget: budget || Number(this.store.getSettings().contextBudget) || 24000, state });
   }
 
   // What the model sees each step. Input used to grow without bound (50 messages, 14k-char tool
   // dumps, every old screenshot), which burned daily quotas and tripped providers' input caps.
   // Now: always keep the task's own request, keep the newest messages whole, shrink older tool
   // output, keep only the newest screenshot, and stop at a token budget (about 4 chars a token).
-  static compactContext(thread, { max = 50, budget = 24000 } = {}) {
+  // Speed: providers cache the start of a request (DeepSeek, OpenAI, Gemini, Kimi…), so a step whose
+  // messages begin exactly like the last step's is answered much faster and cheaper. So the window is
+  // kept STABLE: old messages are shrunk by a rule that only changes when a new request arrives, and
+  // the window's start only moves when it must, then jumps well under budget (hysteresis) so the
+  // next many steps share the same prefix. Pass a `state` object per lane to keep the start between calls.
+  static compactContext(thread, { max = 50, budget = 24000, state } = {}) {
     const est = (m) => {
       const c = m.content;
       let n = typeof c === 'string' ? c.length : Array.isArray(c) ? c.reduce((a, p) => a + (p.type === 'text' ? String(p.text || '').length : 3000), 0) : 0;
@@ -647,44 +670,45 @@ ${files}`;
     };
     const isReq = (m) => m.role === 'user' && !m.hidden && typeof m.content === 'string';
     const shrink = (t, n) => t.length > n ? t.slice(0, Math.floor(n * 0.7)) + `\n…[${t.length - n} chars trimmed]…\n` + t.slice(-Math.floor(n * 0.3)) : t;
-
-    let start = Math.max(0, thread.length - max);
-    // Never cut between a tool call and its results.
-    while (start > 0 && start < thread.length && thread[start].role === 'tool') start--;
-    let win = thread.slice(start).map(clean);
-    const firstIdx = thread.length - win.length;
-    // The request that started this task must stay in view, or the model forgets what it's doing.
+    const N = thread.length;
     let lastReq = -1;
-    for (let i = thread.length - 1; i >= 0; i--) if (isReq(thread[i])) { lastReq = i; break; }
-    const pinned = lastReq >= 0 && lastReq < firstIdx ? [clean(thread[lastReq])] : [];
-
-    // Screenshots: only the newest one stays.
-    let seenImg = false;
-    for (let i = win.length - 1; i >= 0; i--) {
-      const m = win[i];
-      if (Array.isArray(m.content) && m.content.some(p => p.type === 'image_url')) {
-        if (seenImg) m.content = '(Older screenshot removed to save space.)'; else seenImg = true;
+    for (let i = N - 1; i >= 0; i--) if (isReq(thread[i])) { lastReq = i; break; }
+    // Newest screenshot only.
+    let newestImg = -1;
+    for (let i = N - 1; i >= 0; i--) { const c = thread[i].content; if (Array.isArray(c) && c.some(p => p.type === 'image_url')) { newestImg = i; break; } }
+    // Stable shrink: this task's tool output up to 6k chars, earlier tasks' 1.2k; old replies 3k.
+    const view = (i) => {
+      const m = clean(thread[i]);
+      if (Array.isArray(m.content) && m.content.some(p => p.type === 'image_url') && i !== newestImg) m.content = '(Older screenshot removed to save space.)';
+      if (m.role === 'tool' && typeof m.content === 'string') m.content = shrink(m.content, i > lastReq ? 6000 : 1200);
+      else if (m.role === 'assistant' && typeof m.content === 'string' && i < lastReq) m.content = shrink(m.content, 3000);
+      return m;
+    };
+    const fix = (s) => { s = Math.max(0, Math.min(s, N)); while (s < N && thread[s].role === 'tool') s++; return s; };
+    const cost = (from) => { let t = 0; for (let i = from; i < N; i++) t += est(view(i)); return t; };
+    const pinCost = (from) => (lastReq >= 0 && lastReq < from ? est(view(lastReq)) : 0);
+    const fits = (from, lim, cnt) => N - from <= cnt && cost(from) + pinCost(from) <= lim;
+    const sameAnchor = state && state.start != null && state.start <= N && (state.start === 0 || (thread[state.start] && thread[state.start] === state.anchor) || (thread[state.start] && state.anchorAt && thread[state.start].at === state.anchorAt && thread[state.start].role === state.anchorRole));
+    let start;
+    if (sameAnchor && fits(state.start, budget, max)) start = state.start;
+    else {
+      // Move forward until well under the limits, so the start stays put for a while.
+      const lim = state ? budget * 0.6 : budget, cnt = state ? Math.max(4, Math.floor(max * 0.6)) : max;
+      start = fix(Math.max(sameAnchor ? state.start : 0, N - cnt));
+      while (start < N - 2 && !fits(start, lim, Infinity)) {
+        let s = start + 1; while (s < N && thread[s].role === 'tool') s++;
+        start = s;
       }
+      if (state) { state.start = start; state.anchor = thread[start]; state.anchorAt = thread[start] && thread[start].at; state.anchorRole = thread[start] && thread[start].role; }
     }
-    // Tool output: newest 4 results up to 8k chars, older ones 1.2k.
-    let toolSeen = 0;
-    for (let i = win.length - 1; i >= 0; i--) {
-      const m = win[i];
-      if (m.role === 'tool' && typeof m.content === 'string') m.content = shrink(m.content, toolSeen++ < 4 ? 8000 : 1200);
-      else if (m.role === 'assistant' && typeof m.content === 'string' && i < win.length - 6) m.content = shrink(m.content, 3000);
-    }
-    // Budget: drop the oldest whole turns (a turn is an assistant message with its tool results).
+    start = fix(start);
+    let win = []; for (let i = start; i < N; i++) win.push(view(i));
+    const pinned = lastReq >= 0 && lastReq < start ? [view(lastReq)] : [];
     const total = () => win.reduce((a, m) => a + est(m), 0) + pinned.reduce((a, m) => a + est(m), 0);
-    while (win.length > 2 && total() > budget) {
-      let cut = 1;
-      while (cut < win.length && win[cut].role === 'tool') cut++;
-      win = win.slice(cut);
-    }
-    // Drop leading tool results whose call is gone (providers reject them).
-    while (win.length && win[0].role === 'tool') win.shift();
-    // If still over, squeeze every tool result harder.
+    // A single huge step can still be over: squeeze tool output harder.
     if (total() > budget) for (const m of win) if (m.role === 'tool' && typeof m.content === 'string') m.content = shrink(m.content, 600);
-    if (pinned.length && win[0] && win[0].role === 'user' && win[0].content === pinned[0].content) pinned.length = 0;
+    while (win.length > 2 && total() > budget) { let cut = 1; while (cut < win.length && win[cut].role === 'tool') cut++; win = win.slice(cut); }
+    while (win.length && win[0].role === 'tool') win.shift();
     return [...pinned, ...win];
   }
 
@@ -869,12 +893,19 @@ ${files}`;
     const tools = schemas || TOOL_SCHEMAS;
     const body = { model: s.model, messages, tools: google ? Agent._geminiTools(tools) : tools, tool_choice: 'auto', stream: true };
     if (withUsage) body.stream_options = { include_usage: true };
+    // Thinking level: "quick" asks reasoning models to think briefly (much faster first word).
+    // Providers that don't know the field get one retry without it, and are remembered.
+    const effKey = String(s.baseUrl || '') + '|' + s.model;
+    const noEff = this._noEffort || (this._noEffort = new Set());
+    if (s._effort && s._effort !== 'default' && !noEff.has(effKey)) body.reasoning_effort = s._effort === 'quick' ? 'low' : 'high';
+    const t0 = Date.now(); let tFirst = 0;
     let r;
     try { r = await fetch(this._url(s, '/chat/completions'), { method: 'POST', headers: this._headers(s), body: JSON.stringify(body), signal: ctl.signal }); }
     catch (e) { if (e.name === 'AbortError' || ctl.signal.aborted) throw e; throw Agent._netError(e, s); }
     if (!r.ok) {
       const errText = await r.text();
       if (withUsage && r.status === 400 && /stream_options|include_usage/i.test(errText)) return this._complete(s, messages, msgId, streamToUI, false, ctl, schemas, emit);
+      if (body.reasoning_effort && (r.status === 400 || r.status === 422)) { noEff.add(effKey); return this._complete(s, messages, msgId, streamToUI, withUsage, ctl, schemas, emit); }
       if (Agent._flipGoogleAuth(s, r.status, errText)) return this._complete(s, messages, msgId, streamToUI, withUsage, ctl, schemas, emit);
       const msg = Agent._errText(errText);
       const err = new Error(`The model returned an error (HTTP ${r.status}): ${String(msg).slice(0, 300)}`); err.status = r.status;
@@ -883,7 +914,7 @@ ${files}`;
 
     let content = '';
     const calls = [];
-    let tokens = 0;
+    let tokens = 0, usage = null;
     let started = false;
     const decoder = new TextDecoder();
     let buf = '';
@@ -897,9 +928,10 @@ ${files}`;
         const data = line.slice(5).trim();
         if (data === '[DONE]') continue;
         let j; try { j = JSON.parse(data); } catch { continue; }
-        if (j.usage) tokens = j.usage.total_tokens || ((j.usage.prompt_tokens || 0) + (j.usage.completion_tokens || 0)) || tokens;
+        if (j.usage) { tokens = j.usage.total_tokens || ((j.usage.prompt_tokens || 0) + (j.usage.completion_tokens || 0)) || tokens; usage = j.usage; }
         const d = j.choices && j.choices[0] && j.choices[0].delta;
         if (!d) continue;
+        if (!tFirst && (d.content || d.tool_calls || d.reasoning_content || d.reasoning)) tFirst = Date.now();
         if (d.content) {
           content += d.content;
           if (streamToUI) {
@@ -920,7 +952,15 @@ ${files}`;
       }
     } } catch (e) { if (started || content || calls.length) e.partial = true; throw e; }
     if (!tokens) tokens = Math.ceil((JSON.stringify(messages).length + content.length) / 4);
+    this._perf({ lane: s._lane, model: s.model, ms: Date.now() - t0, first: tFirst ? tFirst - t0 : null, inTok: usage && usage.prompt_tokens, cached: usage && ((usage.prompt_tokens_details && usage.prompt_tokens_details.cached_tokens) || usage.prompt_cache_hit_tokens || usage.cached_tokens) || 0, outTok: usage && usage.completion_tokens, effort: body.reasoning_effort || 'default', tools: calls.filter(Boolean).length });
     return { content, toolCalls: calls.filter(Boolean), tokens };
+  }
+
+  // Speed log (perf.log in Orbit's data folder): how long each model step took, time to first
+  // word, and how much of the input the provider served from its cache.
+  _perf(p) {
+    const list = this.perf || (this.perf = []); list.push({ at: Date.now(), ...p }); if (list.length > 200) list.shift();
+    try { if (this.store && this.store.dir) require('fs').appendFileSync(require('path').join(this.store.dir, 'perf.log'), `[${new Date().toISOString()}] ${p.lane || '-'} ${p.model} step ${p.ms}ms first ${p.first ?? '-'}ms in ${p.inTok ?? '?'} cached ${p.cached} out ${p.outTok ?? '?'} think ${p.effort} tools ${p.tools}\n`); } catch {}
   }
 
   // ---- used by tools ----

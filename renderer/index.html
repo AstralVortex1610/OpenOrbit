@@ -393,13 +393,18 @@
               <button class="ghost sm" id="addBackup" type="button">+ Add a backup model</button>
             </div>
             <div class="tiers-compact">
-              <b>Spark, Pulse, Surge</b> <small class="muted">Optional quick picks on the same provider and key as above. Leave one empty and it uses the main model. Pick between them from the model button in chat, projects and Orbiter.</small>
+              <b>Spark, Pulse, Surge</b> <small class="muted">Optional quick picks on the same provider and key as above. Leave one empty and it uses the main model. Pick between them from the model button in projects and Orbiter. Main chat always uses the main model.</small>
               <div class="tier-line">
                 <label><span>Spark <i>fast</i></span><input id="t-spark-model" list="modelList" placeholder="Main model" /></label>
                 <label><span>Pulse <i>balanced</i></span><input id="t-pulse-model" list="modelList" placeholder="Main model" /></label>
                 <label><span>Surge <i>strongest</i></span><input id="t-surge-model" list="modelList" placeholder="Main model" /></label>
               </div>
             </div>
+            <div class="tier-line think-line">
+              <label><span>Thinking in chat</span><select id="s-chatThinking"><option value="quick">Quick (fastest replies)</option><option value="default">Model default</option><option value="deep">Deep (slower, more careful)</option></select></label>
+              <label><span>Thinking in Orbiter</span><select id="s-orbiterThinking"><option value="quick">Quick (fastest)</option><option value="default">Model default</option><option value="deep">Deep (slower, more careful)</option></select></label>
+            </div>
+            <small class="muted think-note">For thinking models (DeepSeek, Gemini, Kimi…). Quick makes them think briefly so the first word comes much sooner. Models that don't support it ignore it.</small>
             <div class="row">
               <button class="ghost" id="testBtn">Test connection</button>
               <span id="testResult" class="muted"></span>

@@ -127,13 +127,16 @@ Permission mode: ${mode.name}. ${mode.blurb}${sess.mode === 'plan' ? '\nPLAN MOD
 
 How you work:
 - Explore before you change: glob/grep/read the relevant files first. Never guess at code you haven't read.
+- Be fast: batch independent glob/grep/read_file/web calls into ONE step (they run in parallel). Read several files at once instead of one per step. Don't re-read a file you just wrote or read.
+- Keep tool output small: grep with a path/glob filter, read_file with offset/limit on big files, quiet flags on commands.
+- Run the slow checks (full test suite, build) once at the end, not after every edit.
 - Make the smallest correct change. Match the existing style. Don't add comments that narrate the change.
 - Prefer edit_file / multi_edit over rewriting whole files. Read a file before editing it.
 - For any job with 3 or more steps, keep a todo list with todo_write and update it as you go.
 - Verify: run the tests, build or linter that the project already has. Fix what you broke.
 - Never commit, push, or delete files unless asked. Never print secrets.
 - Be brief in chat. Lead with what you did or found; use file:line references. No preamble.
-${mem ? '\nProject and user memory (follow it):\n' + mem : ''}${todos}`;
+${mem ? '\nProject and user memory (follow it):\n' + mem : ''}${todos}`; // todos change mid-task; _loop keeps the first system prompt of a task, and todo_write results carry the live list
   }
 
   // ----- tools -----
@@ -250,7 +253,7 @@ ${mem ? '\nProject and user memory (follow it):\n' + mem : ''}${todos}`;
       async todo_write({ todos }) {
         const list = (todos || []).map(t => ({ content: String(t.content || '').slice(0, 200), status: ['pending', 'in_progress', 'completed'].includes(t.status) ? t.status : 'pending' }));
         self.updateSession(sess.id, { todos: list }); self.emit({ type: 'orbiter_todos', session: sess.id, todos: list });
-        return `Todo list updated (${list.filter(t => t.status === 'completed').length}/${list.length} done).`;
+        return `Todo list updated (${list.filter(t => t.status === 'completed').length}/${list.length} done):\n${list.map(t => `- [${t.status}] ${t.content}`).join('\n')}`;
       },
       async web_search(a) { return self.agent.tools.web_search(a); },
       async web_fetch({ url }) { return self.agent.tools.fetch_url({ url }); },
@@ -287,7 +290,7 @@ ${mem ? '\nProject and user memory (follow it):\n' + mem : ''}${todos}`;
         lane, emit, settings: tier.settings, model: tier.model, maxSteps: 80, streamToUI: true,
         pick: () => { const t = this.tierSettings((this.session(id) || sess).tier); return { settings: t.settings, model: t.model }; },
         system: () => this._system(this.session(id) || sess),
-        context: () => this.agent._contextMessages(this.thread(id), 120, (Number(this.store.getSettings().contextBudget) || 24000) * 2),
+        context: () => this.agent._contextMessages(this.thread(id), 120, (Number(this.store.getSettings().contextBudget) || 24000) * 2, 'orb-' + id),
         append: (m) => { const t = this.thread(id); t.push({ ...m, ui: m.role === 'assistant' ? true : m.ui }); this.saveThread(id, t); },
         tools, schemas: SCHEMAS,
         onStep: (label) => { this.busy.set(id, { ...(this.busy.get(id) || {}), step: label }); emit({ type: 'orbiter_step', label }); },

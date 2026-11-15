@@ -172,7 +172,7 @@ function install(Agent) {
     const res = await this._loop({
       lane, emit, settings: tier ? tier.settings : undefined, pick: pickProj,
       system: () => this._systemPrompt('main') + projectSection(this.hub.project(pid) || p, this.hub),
-      context: () => this._contextMessages(this.hub.thread(pid), 50),
+      context: () => this._contextMessages(this.hub.thread(pid), 50, undefined, 'proj-' + pid),
       append,
       tools: buildTools(this, laneObj),
       schemas: schemasFor(n => !NO_PROJECT.has(n)),

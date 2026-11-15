@@ -1,0 +1,44 @@
+name: build-kitten
+on:
+  push:
+    branches: [kitten-watcher-build]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: pip install pyside6-essentials psutil vosk sounddevice numpy pyinstaller
+      - name: Voice model (offline, ~40 MB)
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip -OutFile m.zip
+          Expand-Archive m.zip -DestinationPath tmpm
+          Move-Item tmpm/vosk-model-small-en-us-0.15 assets/vosk-model
+      - name: Import check
+        run: python -c "import sys; sys.argv=['x']; import kitten.pet, kitten.ears, kitten.brain, kitten.win32; print('ok')"
+      - name: Build exe
+        run: >
+          pyinstaller --onefile --noconsole --name KittenWatcher --icon assets/icon.ico
+          --add-data "assets;assets" --collect-all vosk --hidden-import sounddevice
+          --exclude-module tkinter --exclude-module PySide6.QtNetwork --exclude-module PySide6.QtQml
+          --exclude-module PySide6.QtQuick --exclude-module PySide6.QtPdf main.py
+      - name: Smoke run (15 s)
+        shell: pwsh
+        run: |
+          $p = Start-Process dist/KittenWatcher.exe -PassThru
+          Start-Sleep 20
+          $alive = Get-Process KittenWatcher -ErrorAction SilentlyContinue
+          Get-ChildItem $env:APPDATA/KittenWatcher -ErrorAction SilentlyContinue
+          New-Item -ItemType File -Force "$env:APPDATA/KittenWatcher/quit.flag" | Out-Null
+          Get-Process KittenWatcher -ErrorAction SilentlyContinue | Stop-Process -Force
+          if (-not $alive) { Write-Error "KittenWatcher exited early"; exit 1 }
+          Write-Host "running processes:" ($alive | Measure-Object).Count
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KittenWatcher
+          path: dist/KittenWatcher.exe

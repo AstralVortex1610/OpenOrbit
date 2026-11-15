@@ -103,17 +103,28 @@ class Agent {
   async testConnection() {
     const s = this.store.getSettings();
     if (!s.apiKey) return { ok: false, message: 'Add your API key first.' };
-    try {
-      const r = await fetch(this._url(s, '/chat/completions'), {
-        method: 'POST', headers: this._headers(s),
-        body: JSON.stringify({ model: s.model, messages: [{ role: 'user', content: 'Reply with the single word: ready' }], max_tokens: 10 }),
-      });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) return { ok: false, message: (j.error && (j.error.message || j.error)) || `HTTP ${r.status}` };
-      const txt = j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
-      return { ok: true, message: `Connected to ${s.model}. It said: ${String(txt || '').trim().slice(0, 40)}` };
-    } catch (e) { return { ok: false, message: e.message }; }
+    const one = async (c) => {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const r = await fetch(this._url(c, '/chat/completions'), {
+            method: 'POST', headers: this._headers(c),
+            body: JSON.stringify({ model: c.model, messages: [{ role: 'user', content: 'Reply with the single word: ready' }], max_tokens: 200 }),
+          });
+          const text = await r.text();
+          if (!r.ok) {
+            if (attempt === 0 && Agent._flipGoogleAuth(c, r.status, text)) continue;
+            return { ok: false, message: `${c.model}: HTTP ${r.status} ${String(Agent._errText(text)).slice(0, 200)}` };
+          }
+          return { ok: true, message: `${c.model} works` };
+        } catch (e) { return { ok: false, message: `${c.model}: ${e.message}` }; }
+      }
+      return { ok: false, message: `${c.model}: failed` };
+    };
+    const results = [];
+    for (const x of this._chain(s, s.model)) results.push(await one(x.s));
+    return { ok: results.every(r => r.ok), message: results.map(r => (r.ok ? '✓ ' : '✗ ') + r.message).join('  ·  ') };
   }
+
 
   async transcribe(buffer, mime) {
     const s = this.store.getSettings();
@@ -682,7 +693,28 @@ ${files}`;
     const h = { 'Content-Type': 'application/json', Authorization: `Bearer ${s.apiKey}` };
     if (/anthropic\.com/.test(s.baseUrl)) { h['x-api-key'] = s.apiKey; h['anthropic-version'] = '2023-06-01'; }
     if (/openrouter\.ai/.test(s.baseUrl)) { h['HTTP-Referer'] = 'https://orbit.local'; h['X-Title'] = 'Orbit'; }
+    if (Agent._isGoogle(s)) {
+      // New AI Studio keys start with "AQ." and Google's OpenAI-compatible endpoint often refuses
+      // them as a Bearer token (HTTP 400). Send those as x-goog-api-key instead; remember what works.
+      const mode = (Agent._gAuth.get(String(s.apiKey).slice(-12))) || (/^AQ\./.test(String(s.apiKey || '')) ? 'goog' : 'bearer');
+      if (mode === 'goog') { delete h.Authorization; h['x-goog-api-key'] = s.apiKey; }
+    }
     return h;
+  }
+  static _isGoogle(s) { return /generativelanguage\.googleapis\.com/i.test(String((s && s.baseUrl) || '')); }
+  // Google answered an auth-looking 400/401: flip how the key is sent and say whether to retry.
+  static _flipGoogleAuth(s, status, text) {
+    if (!Agent._isGoogle(s) || ![400, 401, 403].includes(status)) return false;
+    if (!/auth|credential|api key|api_key|bearer|token/i.test(String(text || ''))) return false;
+    const k = String(s.apiKey).slice(-12);
+    if (Agent._gAuthTried.has(k)) return false;
+    Agent._gAuthTried.add(k);
+    const cur = Agent._gAuth.get(k) || (/^AQ\./.test(String(s.apiKey || '')) ? 'goog' : 'bearer');
+    Agent._gAuth.set(k, cur === 'goog' ? 'bearer' : 'goog');
+    return true;
+  }
+  static _errText(errText) {
+    try { let j = JSON.parse(errText); if (Array.isArray(j)) j = j[0] || {}; return (j.error && (j.error.message || (typeof j.error === 'string' ? j.error : ''))) || j.message || errText; } catch { return errText; }
   }
 
   // Main model first (or the lane's fast/voice model), then the backups in order.
@@ -760,8 +792,8 @@ ${files}`;
     if (!r.ok) {
       const errText = await r.text();
       if (withUsage && r.status === 400 && /stream_options|include_usage/i.test(errText)) return this._complete(s, messages, msgId, streamToUI, false, ctl, schemas, emit);
-      let msg = errText;
-      try { const j = JSON.parse(errText); msg = (j.error && (j.error.message || j.error)) || errText; } catch {}
+      if (Agent._flipGoogleAuth(s, r.status, errText)) return this._complete(s, messages, msgId, streamToUI, withUsage, ctl, schemas, emit);
+      const msg = Agent._errText(errText);
       const err = new Error(`The model returned an error (HTTP ${r.status}): ${String(msg).slice(0, 300)}`); err.status = r.status;
       throw err;
     }
@@ -834,6 +866,9 @@ ${files}`;
     }));
   }
 }
+
+Agent._gAuth = new Map();
+Agent._gAuthTried = new Set();
 
 function labelFor(name, a) {
   const short = (x, n = 60) => { const s = String(x || ''); return s.length > n ? s.slice(0, n) + '…' : s; };

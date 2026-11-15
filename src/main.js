@@ -201,7 +201,7 @@ ipcMain.handle('voice:brainTest', async () => {
   const model = s.voiceModel || s.fastModel || s.model;
   try {
     const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 25000);
-    const r = await fetch(String(s.baseUrl || '').replace(/\/+$/, '') + '/chat/completions', { method: 'POST', signal: ctl.signal, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.apiKey}` }, body: JSON.stringify({ model, messages: [{ role: 'user', content: 'Reply with just: ok' }], max_tokens: 16 }) });
+    const r = await fetch(String(s.baseUrl || '').replace(/\/+$/, '') + '/chat/completions', { method: 'POST', signal: ctl.signal, headers: agent._headers(s), body: JSON.stringify({ model, messages: [{ role: 'user', content: 'Reply with just: ok' }], max_tokens: 16 }) });
     clearTimeout(tm);
     const body = await r.text();
     if (!r.ok) return { ok: false, error: `${model}: HTTP ${r.status} ${body.slice(0, 200)}` };

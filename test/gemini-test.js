@@ -41,3 +41,33 @@ assert.strictEqual(g.length, TOOL_SCHEMAS.length);
   srv.close();
   console.log('gemini-test ok');
 })().catch(e => { console.error(e); process.exit(1); });
+
+// AQ. auth keys: sent as x-goog-api-key, never Bearer; an AIza key stays Bearer; a refusal flips once.
+(async () => {
+  const seen = [];
+  const srv = http.createServer((req, res) => {
+    let b = ''; req.on('data', c => b += c); req.on('end', () => {
+      seen.push({ auth: req.headers.authorization || '', goog: req.headers['x-goog-api-key'] || '' });
+      const key = req.headers['x-goog-api-key'] || '';
+      if (req.headers.authorization && /AQ\./.test(req.headers.authorization)) { res.writeHead(400); return res.end(JSON.stringify([{ error: { code: 400, message: 'Multiple authentication credentials received' } }])); }
+      if (/needbearer/.test(key)) { res.writeHead(401); return res.end(JSON.stringify({ error: { message: 'API key not valid' } })); }
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      res.end('data: ' + JSON.stringify({ choices: [{ delta: { content: 'ready' } }] }) + '\n\ndata: [DONE]\n\n');
+    });
+  }).listen(0);
+  const base = `http://127.0.0.1:${srv.address().port}/generativelanguage.googleapis.com/v1beta/openai`;
+  const a = Object.create(Agent.prototype); a.emit = () => {};
+  let r = await a._complete({ baseUrl: base, apiKey: 'AQ.Ab8testkey_1Mw', model: 'gemini-4-hydrogen' }, [{ role: 'user', content: 'hi' }], 'm', false, false);
+  assert.strictEqual(r.content, 'ready'); assert.strictEqual(seen[0].auth, ''); assert.strictEqual(seen[0].goog, 'AQ.Ab8testkey_1Mw');
+  seen.length = 0;
+  r = await a._complete({ baseUrl: base, apiKey: 'AIzaSyFake123', model: 'gemini-4-hydrogen' }, [{ role: 'user', content: 'hi' }], 'm', false, false);
+  assert.strictEqual(seen[0].auth, 'Bearer AIzaSyFake123');
+  // the error message comes out of Google's array-form errors
+  assert.strictEqual(Agent._errText(JSON.stringify([{ error: { message: 'boom' } }])), 'boom');
+  // testConnection reports main + backups
+  a.store = { getSettings: () => ({ baseUrl: base, apiKey: 'AQ.main', model: 'gemini-4-hydrogen', backupModels: [{ model: 'gemini-3.8-flash', baseUrl: base, apiKey: 'AQ.backup' }] }) };
+  const tc = await a.testConnection();
+  assert.ok(tc.ok, tc.message); assert.ok(/gemini-3\.8-flash/.test(tc.message));
+  srv.close();
+  console.log('gemini auth ok');
+})().catch(e => { console.error(e); process.exit(1); });

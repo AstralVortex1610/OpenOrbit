@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('orbit', {
   getSettings: () => ipcRenderer.invoke('settings:get'),
+  openOrbiter: (id) => ipcRenderer.invoke('orbiter:open', id),
   saveSettings: (s) => ipcRenderer.invoke('settings:save', s),
   testConnection: () => ipcRenderer.invoke('settings:test'),
   listModels: () => ipcRenderer.invoke('settings:models'),

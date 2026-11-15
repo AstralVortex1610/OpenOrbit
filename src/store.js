@@ -56,8 +56,18 @@ const DEFAULT_SETTINGS = {
   osintBeta: false, // hidden beta: Osint toolkit
   mcpServers: [], // [{ id, name, type: 'stdio'|'http', command, args, url, enabled, secretEnc }] secret = { env, headers }
   apiConnectors: [], // [{ id, name, baseUrl, auth, authHeader, headers, description, enabled, apiKeyEnc }]
+  // Orbit's own model line: aliases over any provider. Empty model = use the main model.
+  modelTiers: {}, // { spark|pulse|surge: { model, baseUrl, apiKeyEnc } }
+  chatTier: '', // '' = main model, else a tier id
+  orbiterTier: 'pulse',
+  orbiterMode: 'ask', // ask | acceptEdits | plan | auto | bypass
+  orbiterTheme: 'orbit-dark',
+  orbiterLastFolder: '',
+  orbiterAllow: [], // command prefixes Orbiter may run without asking
+  orbiterHandoff: true, // chat may suggest and hand coding work to Orbiter
 };
-const LIST_KEYS = new Set(['backupModels', 'mcpServers', 'apiConnectors']);
+const LIST_KEYS = new Set(['backupModels', 'mcpServers', 'apiConnectors', 'modelTiers']);
+const TIER_IDS = ['spark', 'pulse', 'surge'];
 function sleepSync(ms) { try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } catch {} }
 
 // Google AI Studio: people paste the native base URL (or a "models/..." name). Orbit speaks the
@@ -174,6 +184,14 @@ class Store {
       const bu = fixGoogleUrl(b.baseUrl || '');
       return { id: b.id, model: fixModelName(b.model, bu || s.baseUrl), baseUrl: bu, apiKey };
     });
+    const tiers = {};
+    for (const id of TIER_IDS) {
+      const t = (s.modelTiers || {})[id]; if (!t || !t.model) continue;
+      let apiKey = ''; if (t.apiKeyEnc) { try { apiKey = this._dec(t.apiKeyEnc); } catch {} }
+      const bu = fixGoogleUrl(t.baseUrl || '');
+      tiers[id] = { model: fixModelName(t.model, bu || s.baseUrl), baseUrl: bu, apiKey };
+    }
+    s.modelTiers = tiers;
     s.mcpServers = (Array.isArray(s.mcpServers) ? s.mcpServers : []).map(m => {
       let sec = {}; if (m.secretEnc) { try { sec = JSON.parse(this._dec(m.secretEnc)); } catch {} }
       const { secretEnc, ...rest } = m; return { ...rest, env: sec.env || {}, headers: sec.headers || {} };
@@ -196,6 +214,7 @@ class Store {
     const masked = hasKey ? s.apiKey.slice(0, 4) + '…' + s.apiKey.slice(-4) : '';
     delete s.apiKey; delete s.apiKeyEnc;
     s.backupModels = s.backupModels.map(b => ({ id: b.id, model: b.model, baseUrl: b.baseUrl, hasKey: !!b.apiKey, keyPreview: b.apiKey ? b.apiKey.slice(0, 4) + '…' + b.apiKey.slice(-4) : '' }));
+    s.modelTiers = Object.fromEntries(Object.entries(s.modelTiers).map(([id, t]) => [id, { model: t.model, baseUrl: t.baseUrl, hasKey: !!t.apiKey, keyPreview: t.apiKey ? t.apiKey.slice(0, 4) + '…' + t.apiKey.slice(-4) : '' }]));
     s.mcpServers = s.mcpServers.map(({ env, headers, ...m }) => ({ ...m, envKeys: Object.keys(env || {}), headerKeys: Object.keys(headers || {}) }));
     s.apiConnectors = s.apiConnectors.map(({ apiKey, ...a }) => ({ ...a, hasKey: !!apiKey, keyPreview: apiKey ? apiKey.slice(0, 4) + '…' + apiKey.slice(-4) : '' }));
     return { ...s, hasKey, keyPreview: masked };
@@ -219,6 +238,18 @@ class Store {
         else if (!b.clearKey && old.get(id) && old.get(id).apiKeyEnc) row.apiKeyEnc = old.get(id).apiKeyEnc;
         return row;
       });
+    }
+    if (incoming.modelTiers && typeof incoming.modelTiers === 'object') {
+      const old = cur.modelTiers || {}; const out = {};
+      for (const id of TIER_IDS) {
+        const t = incoming.modelTiers[id]; if (t === undefined) { if (old[id]) out[id] = old[id]; continue; }
+        if (!t || !String(t.model || '').trim()) continue;
+        const row = { model: String(t.model).trim(), baseUrl: String(t.baseUrl || '').trim() };
+        if (typeof t.apiKey === 'string' && t.apiKey.trim()) row.apiKeyEnc = this._enc(t.apiKey.trim());
+        else if (!t.clearKey && old[id] && old[id].apiKeyEnc) row.apiKeyEnc = old[id].apiKeyEnc;
+        out[id] = row;
+      }
+      next.modelTiers = out;
     }
     const rid = () => Math.random().toString(36).slice(2, 10);
     if (Array.isArray(incoming.mcpServers)) {

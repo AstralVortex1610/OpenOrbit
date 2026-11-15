@@ -415,6 +415,7 @@
     if (view === 'chat') setTimeout(() => input.focus(), 50);
   }
   $$('.rail-btn').forEach(b => b.onclick = () => show(b.dataset.view, b.dataset.view === 'chat' ? { scope: 'main' } : {}));
+  $('#orbiterBtn').onclick = () => api.openOrbiter();
 
   // ---------- switching conversations (main chat or a project) ----------
   function msgText(m) {
@@ -516,7 +517,7 @@
   $('#openMemFolder').onclick = () => api.openMemoryFolder();
 
   // ---------- settings ----------
-  const FIELDS = ['orbitVoice', 'orbitStt', 'orbitTts', 'orbitPhononVoice', 'orbitWinVoice', 'orbitPauseMs', 'liveEngine', 'liveGeminiVoice', 'liveOpenaiVoice', 'baseUrl', 'model', 'fastModel', 'voiceModel', 'browserChannel', 'phoneWhen', 'phoneIdleMinutes', 'ntfyServer', 'transcribeModel', 'userName', 'approvalMode', 'dailyTokenCap', 'contextBudget', 'maxSteps', 'hotkey', 'maxWorkers', 'imageModel', 'imageBaseUrl', 'googleClientId', 'visionModel'];
+  const FIELDS = ['orbitVoice', 'orbitStt', 'orbitTts', 'orbitPhononVoice', 'orbitWinVoice', 'orbitPauseMs', 'liveEngine', 'liveGeminiVoice', 'liveOpenaiVoice', 'baseUrl', 'model', 'fastModel', 'voiceModel', 'browserChannel', 'phoneWhen', 'phoneIdleMinutes', 'ntfyServer', 'transcribeModel', 'userName', 'approvalMode', 'dailyTokenCap', 'contextBudget', 'maxSteps', 'hotkey', 'maxWorkers', 'imageModel', 'imageBaseUrl', 'googleClientId', 'visionModel', 'chatTier', 'orbiterTier'];
   const TOGGLES = ['autoUpdate', 'talkFirst', 'autoCall', 'orbitGpu', 'wakeOpensLive', 'voiceReplies', 'closeToTray', 'startWithWindows', 'wakeWord', 'ntfyEnabled', 'telegramEnabled', 'osintBeta'];
   // Edits you haven't saved yet survive any refresh of this screen (a new ntfy topic,
   // Telegram pairing, Google connect...). Before, those refreshes wiped the whole form.
@@ -553,6 +554,12 @@
     $('#tgState').style.color = settings.telegramChatId ? 'var(--ok)' : '';
     if (settings.telegramChatId && !$('#unpairTg')) { const b = document.createElement('button'); b.id = 'unpairTg'; b.className = 'link-btn'; b.textContent = 'Unpair'; b.onclick = async () => { await api.phoneUnpairTelegram(); loadSettings(); }; $('#tgState').appendChild(b); }
     if (!backupsDirty) renderBackups(settings.backupModels || []);
+    for (const t of ['spark', 'pulse', 'surge']) {
+      const m = (settings.modelTiers || {})[t] || {};
+      if (!dirty.has(`t-${t}-model`)) $(`#t-${t}-model`).value = m.model || '';
+      if (!dirty.has(`t-${t}-baseUrl`)) $(`#t-${t}-baseUrl`).value = m.baseUrl || '';
+      $(`#t-${t}-apiKey`).value = ''; $(`#t-${t}-apiKey`).placeholder = m.hasKey ? `Saved (${m.keyPreview})` : 'API key (optional)';
+    }
     for (const [el, prop, v] of keep) el[prop] = v;
     if (keep.length) syncLiveEngine();
     syncWake();
@@ -740,6 +747,12 @@
     TOGGLES.forEach(f => (out[f] = $('#s-' + f).checked));
     const key = $('#s-apiKey').value.trim(); if (key) out.apiKey = key;
     out.backupModels = readBackups();
+    out.modelTiers = {};
+    for (const t of ['spark', 'pulse', 'surge']) {
+      const row = { model: $(`#t-${t}-model`).value.trim(), baseUrl: $(`#t-${t}-baseUrl`).value.trim() };
+      const k = $(`#t-${t}-apiKey`).value.trim(); if (k) row.apiKey = k;
+      out.modelTiers[t] = row;
+    }
     const tg = $('#s-telegramToken').value.trim(); if (tg) out.telegramToken = tg;
     for (const k of ['liveGeminiKey', 'liveOpenaiKey', 'googleClientSecret', 'netlifyToken', 'imageApiKey', 'hibpKey']) { const v = $('#k-' + k).value.trim(); if (v) out[k] = v; }
     const prevTts = settings.orbitTts || 'auto', prevStt = settings.orbitStt || 'moonshine';

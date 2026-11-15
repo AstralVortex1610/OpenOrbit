@@ -223,6 +223,7 @@
     $('#scopeName').textContent = cur.name; $('#scopeAbout').textContent = cur.about || '';
     const m = $('#scopeMono'); m.textContent = cur.name.slice(0, 1).toUpperCase(); m.style.setProperty('--c', cur.color);
     $('#briefText').value = cur.brief || ''; $('#briefSave').disabled = true;
+    $('#projTier').value = cur.tier || '';
     $('#fileList').innerHTML = (cur.fileList || []).length ? cur.fileList.map(f => `<button class="file" data-n="${esc(f.name)}">${I.file}<span>${esc(f.name)}</span><small>${f.size > 1048576 ? (f.size / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(f.size / 1024)) + ' KB'}</small></button>`).join('') : '<div class="mini-empty">No files yet. Anything Orbit makes for this project lands here.</div>';
     $$('#fileList .file').forEach(b => b.onclick = () => api.projects.openFile(cur.id, b.dataset.n));
   }
@@ -231,6 +232,7 @@
   $('#drawerBtn').onclick = () => { $('#drawer').classList.toggle('open'); if ($('#drawer').classList.contains('open')) reloadCur(); };
   $('#briefText').addEventListener('input', () => ($('#briefSave').disabled = false));
   $('#briefSave').onclick = async () => { await api.projects.update(cur.id, { brief: $('#briefText').value }); $('#briefSave').disabled = true; A().toast('Brief saved'); };
+  $('#projTier').onchange = async () => { if (!cur) return; cur = { ...cur, tier: $('#projTier').value }; await api.projects.update(cur.id, { tier: $('#projTier').value }); A().toast($('#projTier').value ? `This project now uses ${$('#projTier').selectedOptions[0].text}` : 'This project uses the default model'); };
   $('#openProjFolder').onclick = () => api.projects.openFolder(cur.id);
   $('#clearProjChat').onclick = async () => { if (!confirm(`Clear the chat in "${cur.name}"? The brief and files stay.`)) return; await api.projects.clear(cur.id); A().openScope(cur.id); };
   $('#deleteProj').onclick = async () => {

@@ -57,6 +57,10 @@
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12 18 6"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg>
         <span>Osint</span>
       </button>
+      <button class="rail-btn rail-orbiter" id="orbiterBtn" title="Orbiter (coding agent)">
+        <svg viewBox="0 0 24 24"><path d="m8 8-4 4 4 4M16 8l4 4-4 4"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/></svg>
+        <span>Orbiter</span><i class="count" id="orbBadge"></i>
+      </button>
       <div class="rail-spacer"></div>
       <button class="rail-btn" data-view="settings" title="Settings">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
@@ -130,6 +134,7 @@
           <button class="scope-back" id="scopeBack" title="All projects"><svg viewBox="0 0 24 24"><path d="M14.5 6 8.5 12l6 6"/></svg></button>
           <span class="proj-mono" id="scopeMono"></span>
           <div class="scope-title"><b id="scopeName"></b><span id="scopeAbout"></span></div>
+          <select class="tier-pick" id="projTier" title="Model for this project"><option value="">Default model</option><option value="spark">Spark</option><option value="pulse">Pulse</option><option value="surge">Surge</option></select>
           <button class="ghost sm" id="drawerBtn"><svg viewBox="0 0 24 24"><path d="M5 4.5h14v15H5zM14.5 4.5v15"/></svg>Brief &amp; files</button>
         </div>
         <aside class="drawer" id="drawer">
@@ -380,6 +385,14 @@
               <b>Backup models</b> <small class="muted">If a model hits its limit or goes down, Orbit switches to the next one by itself and carries on. Leave base URL and key empty to use the ones above, or fill them to use another provider.</small>
               <div id="backupList"></div>
               <button class="ghost sm" id="addBackup" type="button">+ Add a backup model</button>
+            </div>
+            <div class="backups tiers">
+              <b>Orbit models</b> <small class="muted">Orbit's own line. Each tier is a name you map to any provider's model; leave base URL and key empty to use the ones above. Orbiter, chat and each project can pick a tier.</small>
+              <div class="tier-row"><span class="tn">Spark<i>fast, cheap</i></span><input id="t-spark-model" list="modelList" placeholder="e.g. a Flash model" /><input id="t-spark-baseUrl" placeholder="Base URL (optional)" /><input id="t-spark-apiKey" type="password" placeholder="API key (optional)" autocomplete="off" /></div>
+              <div class="tier-row"><span class="tn">Pulse<i>balanced</i></span><input id="t-pulse-model" list="modelList" placeholder="e.g. gemini-4-hydrogen" /><input id="t-pulse-baseUrl" placeholder="Base URL (optional)" /><input id="t-pulse-apiKey" type="password" placeholder="API key (optional)" autocomplete="off" /></div>
+              <div class="tier-row"><span class="tn">Surge<i>strongest</i></span><input id="t-surge-model" list="modelList" placeholder="e.g. a Pro model" /><input id="t-surge-baseUrl" placeholder="Base URL (optional)" /><input id="t-surge-apiKey" type="password" placeholder="API key (optional)" autocomplete="off" /></div>
+              <label class="inline">Chat uses <select id="s-chatTier"><option value="">Main model</option><option value="spark">Spark</option><option value="pulse">Pulse</option><option value="surge">Surge</option></select></label>
+              <label class="inline">Orbiter uses <select id="s-orbiterTier"><option value="spark">Spark</option><option value="pulse">Pulse</option><option value="surge">Surge</option></select></label>
             </div>
             <div class="row">
               <button class="ghost" id="testBtn">Test connection</button>

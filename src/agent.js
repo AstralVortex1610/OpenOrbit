@@ -14,8 +14,8 @@ const { Google } = require('./google');
 const { Passwords } = require('./passwords');
 const { Hub, install: installHub } = require('./hub');
 
-const PARALLEL_SAFE = new Set(['password_list', 'read_file', 'list_dir', 'web_search', 'fetch_url', 'memory_list', 'memory_read', 'skill_read', 'list_tasks', 'windows_list', 'screenshot', 'task_status', 'gmail_search', 'gmail_read', 'calendar_events', 'start_task', 'view_image', 'connectors_list', 'image_metadata', 'place_lookup', 'whois_lookup', 'dns_lookup', 'subdomains', 'ip_lookup', 'site_tech', 'wayback', 'org_lookup', 'public_figure']);
-const SIDE_TOOLS = new Set(['web_search', 'fetch_url', 'read_file', 'list_dir', 'memory_list', 'memory_read', 'memory_append', 'skill_read', 'list_tasks', 'open', 'task_status', 'start_task', 'stop_task', 'tell_main', 'forward_to_main', 'password_save', 'password_list', 'gmail_search', 'gmail_read', 'calendar_events', 'notify_user', 'schedule_task']);
+const PARALLEL_SAFE = new Set(['orbiter_status', 'password_list', 'read_file', 'list_dir', 'web_search', 'fetch_url', 'memory_list', 'memory_read', 'skill_read', 'list_tasks', 'windows_list', 'screenshot', 'task_status', 'gmail_search', 'gmail_read', 'calendar_events', 'start_task', 'view_image', 'connectors_list', 'image_metadata', 'place_lookup', 'whois_lookup', 'dns_lookup', 'subdomains', 'ip_lookup', 'site_tech', 'wayback', 'org_lookup', 'public_figure']);
+const SIDE_TOOLS = new Set(['orbiter_status', 'orbiter_handoff', 'web_search', 'fetch_url', 'read_file', 'list_dir', 'memory_list', 'memory_read', 'memory_append', 'skill_read', 'list_tasks', 'open', 'task_status', 'start_task', 'stop_task', 'tell_main', 'forward_to_main', 'password_save', 'password_list', 'gmail_search', 'gmail_read', 'calendar_events', 'notify_user', 'schedule_task']);
 const NO_WORKER = new Set(['start_task', 'wait_tasks', 'tell_main', 'forward_to_main', 'stop_task', 'project_brief']);
 const NO_MAIN = new Set(['tell_main', 'forward_to_main', 'project_brief']);
 
@@ -185,6 +185,7 @@ class Agent {
     else lines.push('main: idle');
     for (const w of this.workers.values()) lines.push(`${w.id}: "${w.label}" running ${Math.round((Date.now() - w.at) / 1000)}s${w.steps.length ? ` | latest step: ${w.steps[w.steps.length - 1]}` : ''}`);
     for (const w of this.workerQueue) lines.push(`${w.id}: "${w.label}" queued`);
+    if (this.orbiter) lines.push('Orbiter (coding agent):\n' + this.orbiter.statusText());
     return lines.join('\n');
   }
 
@@ -247,14 +248,15 @@ class Agent {
       if (!quiet) emit({ type: 'user_message', id: msg.id, text: display || userText, images: (attachments || []).map(a => a.dataUrl), via: msg.via });
     }
 
+    const chatTier = !proactiveTask && s.chatTier ? this.tierSettings(s.chatTier) : null;
     const res = await this._loop({
-      lane: 'main', emit,
+      lane: 'main', emit, settings: chatTier ? chatTier.settings : undefined,
       system: () => this._systemPrompt(proactiveTask ? 'proactive' : 'main'),
       context: () => this._contextMessages(this.store.getThread(), 50),
       append: (m) => this._append(m),
       tools: this.tools,
       schemas: schemasFor(n => !NO_MAIN.has(n)),
-      model: proactiveTask ? (s.fastModel || s.model) : s.model,
+      model: proactiveTask ? (s.fastModel || s.model) : chatTier ? chatTier.model : s.model,
       maxSteps: Number(s.maxSteps) || 25,
       streamToUI: !proactiveTask,
       proactive: !!proactiveTask,
@@ -423,8 +425,8 @@ ${this._recentTranscript(14) || '(none)'}
   }
 
   // ---------------- the loop every lane runs ----------------
-  async _loop({ lane, emit, system, context, append, tools, schemas, model, maxSteps, streamToUI, proactive, onStep, onSafePoint }) {
-    const s = this.store.getSettings();
+  async _loop({ lane, emit, system, context, append, tools, schemas, model, maxSteps, streamToUI, proactive, onStep, onSafePoint, settings }) {
+    const s = settings || this.store.getSettings();
     const ctl = new AbortController();
     this.ctls.set(lane, ctl);
     for (let step = 0; step < maxSteps; step++) {
@@ -532,6 +534,13 @@ ${this._recentTranscript(14) || '(none)'}
 # Connectors
 ${this.connectors && this.connectors.schemas().length ? `- Connected: ${this.connectors.status().mcp.filter(m => m.status === 'connected').map(m => m.name).concat(this.connectors.status().api.filter(a => a.enabled).map(a => a.name)).join(', ')}. Their tools start with mcp_ or api_. Prefer them over the browser for those services.` : '- None yet besides Google. If the user wants Orbit to reach a service (Notion, GitHub, Slack, a database, anything with an MCP server or an API), tell them to add it in Connectors.'}
 ${s.osintBeta ? '\n' + OSINT_PROMPT + '\n' : ''}
+# Orbiter (your coding agent)
+- Orbiter is Orbit's built-in coding agent (like Claude Code): it works inside one folder with file edits, diffs, checkpoints, a todo list and its own model tier.
+- orbiter_status shows every Orbiter session and what it is doing. Use it whenever the user asks about Orbiter, coding sessions, or "what's running".${s.orbiterHandoff !== false ? `
+- When the user asks for real coding work in a codebase (build a feature, fix a bug across files, refactor, run tests), say in one line that Orbiter will do it better, then call orbiter_handoff yourself with the full task and everything you already know (files, errors, decisions). Never make the user retype it. Small one-off snippets you can answer yourself.` : ''}
+- Orbit's model line: Spark (fast, cheap), Pulse (balanced), Surge (strongest). Each is an alias the user maps to any provider's model in Settings.
+${this.orbiter ? '- Orbiter right now:\n' + this.orbiter.statusText().split('\n').slice(0, 6).join('\n') : ''}
+
 # Home, projects, updates
 - The app has a Home screen of live panels. When the user wants something glanceable that changes (a price, weather, a countdown, unread mail, trending repos), or asks for it "on my Home", use panel_create. Panels refresh themselves; never promise faster than every 30 minutes.
 - Projects are separate spaces with their own chat, files and brief. When a request is a new, ongoing body of work, offer to make it a project (project_create); create it when they agree or ask.
@@ -688,6 +697,17 @@ ${files}`;
     return arr.map(m => m.id || m.name).filter(Boolean).map(x => String(x).replace(/^models\//, '')).sort();
   }
 
+  // Orbit's own model line (Spark, Pulse, Surge): an alias over any provider's model.
+  // The tier's model goes first; the main model and the backups stay behind it as fallbacks.
+  tierSettings(tierId) {
+    const s = this.store.getSettings();
+    const t = tierId && (s.modelTiers || {})[tierId];
+    const name = { spark: 'Spark', pulse: 'Pulse', surge: 'Surge' }[tierId] || '';
+    if (!t || !t.model) return { settings: s, model: s.model, label: name ? `${name} (main model)` : s.model };
+    const settings = { ...s, model: t.model, baseUrl: t.baseUrl || s.baseUrl, apiKey: t.apiKey || s.apiKey,
+      backupModels: [{ id: 'main', model: s.model, baseUrl: s.baseUrl, apiKey: s.apiKey }, ...(s.backupModels || [])] };
+    return { settings, model: t.model, label: `${name} · ${t.model}` };
+  }
   _url(s, p) { return String(s.baseUrl || '').replace(/\/+$/, '') + p; }
   _headers(s) {
     const h = { 'Content-Type': 'application/json', Authorization: `Bearer ${s.apiKey}` };
@@ -939,6 +959,15 @@ function labelFor(name, a) {
     case 'public_figure': return `Public figure: ${short(a.name, 30)}`;
     case 'breach_check': return 'Checking breaches';
     case 'publish_site': return `Publishing ${short(a.name, 30)}`;
+    case 'orbiter_status': return 'Checking Orbiter';
+    case 'orbiter_handoff': return 'Handing this to Orbiter';
+    case 'glob': return `Finding ${short(a.pattern, 50)}`;
+    case 'grep': return `Searching for ${short(a.pattern, 40)}`;
+    case 'edit_file': case 'multi_edit': return `Editing ${short(a.path)}`;
+    case 'bash': return `Running: ${short(a.description || a.command)}`;
+    case 'todo_write': return 'Updating the todo list';
+    case 'web_fetch': return `Reading ${short(a.url)}`;
+    case 'exit_plan_mode': return 'Presenting the plan';
     default: return /^mcp_/.test(name) ? `Using ${name.replace(/^mcp_/, '').replace('__', ': ').replace(/_/g, ' ')}` : /^api_/.test(name) ? `${String(a.method || 'GET')} ${name.slice(4)} ${short(a.path, 40)}` : name;
   }
 }

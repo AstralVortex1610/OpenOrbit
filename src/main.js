@@ -9,10 +9,12 @@ const { Phone } = require('./phone');
 const { Live } = require('./live');
 const { VoiceCache } = require('./voice-cache');
 const { Updater, updateInProgress } = require('./updater');
+const { Orbiter, TIERS, MODES } = require('./orbiter');
 // Lets the on-device voice models use several CPU threads.
 app.commandLine.appendSwitch('enable-features', 'SharedArrayBuffer');
 
 let win = null;
+let orbWin = null;
 let tray = null;
 let quitting = false;
 const ICON = path.join(__dirname, '..', 'assets', 'icon.png');
@@ -39,7 +41,11 @@ function notify(title, body, onClick) {
 let live = null;
 const agent = new Agent({
   store,
-  emit: (evt) => { send('agent:event', evt); if (live) live.onAgentEvent(evt); },
+  emit: (evt) => {
+    // Approvals and questions from an Orbiter session belong in the Orbiter window.
+    if (String(evt.lane || '').startsWith('orb-')) { sendOrb('orbiter:event', { ...evt, session: String(evt.lane).slice(4) }); if (!orbWin || orbWin.isDestroyed() || !orbWin.isFocused()) send('agent:event', { type: 'notice', title: 'Orbiter needs you', text: evt.title || evt.question || '' }); return; }
+    send('agent:event', evt); if (live) live.onAgentEvent(evt);
+  },
   // Orbit reaching out: a desktop notification when the window is not in front,
   // and a phone ping when the user is away from the laptop (or always, if they chose that).
   reachOut: (title, body, meta = {}) => {
@@ -61,6 +67,23 @@ function shouldPingPhone(focused) {
   if (s.phoneWhen === 'never') return false;
   if (s.phoneWhen === 'always') return !focused || userAway();
   return userAway();
+}
+
+function sendOrb(channel, payload) { if (orbWin && !orbWin.isDestroyed()) orbWin.webContents.send(channel, payload); }
+const orbiter = new Orbiter({ agent, store, emit: (evt) => { sendOrb('orbiter:event', evt); if (evt.type === 'orbiter_busy' || evt.type === 'orbiter_sessions') send('agent:event', { type: 'orbiter_changed' }); } });
+agent.orbiter = orbiter;
+agent.openOrbiter = (sessionId) => openOrbiter(sessionId);
+function openOrbiter(sessionId) {
+  if (orbWin && !orbWin.isDestroyed()) { orbWin.show(); orbWin.focus(); if (sessionId) sendOrb('orbiter:open', sessionId); return; }
+  orbWin = new BrowserWindow({
+    width: 1320, height: 840, minWidth: 940, minHeight: 600, backgroundColor: '#141311', title: 'Orbiter', icon: ICON,
+    frame: false, titleBarStyle: 'hidden', show: false,
+    webPreferences: { preload: path.join(__dirname, 'preload-orbiter.js'), contextIsolation: true, nodeIntegration: false },
+  });
+  orbWin.loadFile(path.join(__dirname, '..', 'renderer', 'orbiter.html'), { query: sessionId ? { session: sessionId } : {} });
+  orbWin.once('ready-to-show', () => orbWin.show());
+  orbWin.on('closed', () => { orbWin = null; });
+  orbWin.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
 }
 
 live = new Live({ store, agent, emit: (evt) => send('live:event', evt) });
@@ -225,7 +248,7 @@ ipcMain.handle('ui:scope', (_e, scope) => { agent.viewScope = scope || 'main'; r
 ipcMain.handle('projects:list', () => hub.projects().map(p => ({ ...p, busy: agent.projectBusy(p.id), files: hub.listFiles(p.id).length })));
 ipcMain.handle('projects:get', (_e, id) => { const p = hub.project(id); return p ? { ...p, busy: agent.projectBusy(id), folder: hub.filesDir(id), fileList: hub.listFiles(id).slice(0, 100).map(({ path: _p, ...f }) => f) } : null; });
 ipcMain.handle('projects:create', (_e, d) => hub.createProject(d || {}));
-ipcMain.handle('projects:update', (_e, id, patch) => { const allowed = {}; for (const k of ['name', 'about', 'brief']) if (patch && typeof patch[k] === 'string') allowed[k] = patch[k]; return hub.updateProject(id, allowed); });
+ipcMain.handle('projects:update', (_e, id, patch) => { const allowed = {}; for (const k of ['name', 'about', 'brief', 'tier']) if (patch && typeof patch[k] === 'string') allowed[k] = patch[k]; return hub.updateProject(id, allowed); });
 ipcMain.handle('projects:delete', (_e, id) => { agent.stopLane('proj-' + id); hub.deleteProject(id); return true; });
 ipcMain.handle('projects:thread', (_e, id) => hub.thread(id).filter(m => m.ui));
 ipcMain.handle('projects:clear', (_e, id) => { hub.clearThread(id); return true; });
@@ -271,6 +294,31 @@ ipcMain.handle('win:minimize', () => win.minimize());
 ipcMain.handle('win:maximize', () => (win.isMaximized() ? win.unmaximize() : win.maximize()));
 ipcMain.handle('win:close', () => win.close());
 ipcMain.handle('app:info', () => ({ version: app.getVersion(), platform: process.platform, dataDir: app.getPath('userData') }));
+
+// ----- Orbiter -----
+ipcMain.handle('orbiter:open', (_e, id) => { openOrbiter(id); return true; });
+ipcMain.handle('orbiter:meta', () => ({ tiers: TIERS, modes: MODES, settings: (({ orbiterTier, orbiterMode, orbiterTheme, orbiterAllow, modelTiers, model }) => ({ orbiterTier, orbiterMode, orbiterTheme, orbiterAllow, modelTiers, model }))(store.getSettingsForUI()), themes: orbiter.themes(), themesDir: orbiter.themesDir, version: app.getVersion() }));
+ipcMain.handle('orbiter:sessions', () => orbiter.sessions());
+ipcMain.handle('orbiter:session', (_e, id) => orbiter.session(id));
+ipcMain.handle('orbiter:create', (_e, d) => orbiter.createSession(d || {}));
+ipcMain.handle('orbiter:update', (_e, id, patch) => { const ok = {}; for (const k of ['name', 'tier', 'mode', 'folder']) if (patch && patch[k] !== undefined) ok[k] = patch[k]; return orbiter.updateSession(id, ok); });
+ipcMain.handle('orbiter:delete', (_e, id) => { orbiter.deleteSession(id); return true; });
+ipcMain.handle('orbiter:thread', (_e, id) => orbiter.thread(id).filter(m => m.ui || m.role === 'tool').map(m => ({ role: m.role, content: typeof m.content === 'string' ? m.content : '', display: m.display, at: m.at, id: m.id, checkpoint: m.checkpoint, name: m.name, compact: m.compact, tool_calls: m.tool_calls ? m.tool_calls.map(c => ({ id: c.id, name: c.function.name, args: c.function.arguments })) : undefined, tool_call_id: m.tool_call_id })));
+ipcMain.handle('orbiter:send', (_e, id, text) => { orbiter.send(id, text).catch(() => {}); return true; });
+ipcMain.handle('orbiter:diffs', (_e, id) => orbiter.diffs(id));
+ipcMain.handle('orbiter:clear', (_e, id) => { orbiter.clearThread(id); return true; });
+ipcMain.handle('orbiter:stop', (_e, id) => orbiter.stop(id));
+ipcMain.handle('orbiter:checkpoints', (_e, id) => orbiter.checkpoints(id).map(c => ({ id: c.id, at: c.at, prompt: c.prompt, files: c.files.map(f => f.path) })));
+ipcMain.handle('orbiter:rewind', (_e, id, cp, opts) => { try { return { ok: true, ...orbiter.rewind(id, cp, opts || {}) }; } catch (e) { return { ok: false, error: e.message }; } });
+ipcMain.handle('orbiter:compact', async (_e, id, focus) => { try { return { ok: true, text: await orbiter.compact(id, focus) }; } catch (e) { return { ok: false, error: e.message }; } });
+ipcMain.handle('orbiter:init', (_e, id) => { orbiter.init(id).catch(() => {}); return true; });
+ipcMain.handle('orbiter:memory', (_e, id) => { const s = orbiter.session(id); return s ? orbiter.memoryFiles(s.folder).map(m => ({ path: m.path, scope: m.scope, size: m.text.length })) : []; });
+ipcMain.handle('orbiter:pickFolder', async () => { const r = await dialog.showOpenDialog(orbWin || win, { properties: ['openDirectory'] }); return r.canceled ? null : r.filePaths[0]; });
+ipcMain.handle('orbiter:openPath', (_e, p) => (p && fs.existsSync(p) ? shell.openPath(p) : 'not found'));
+ipcMain.handle('orbiter:saveSettings', (_e, patch) => { const ok = {}; for (const k of ['orbiterTier', 'orbiterMode', 'orbiterTheme', 'orbiterAllow']) if (patch && patch[k] !== undefined) ok[k] = patch[k]; store.saveSettings(ok); return true; });
+ipcMain.handle('orbiter:saveTheme', (_e, slug, data) => orbiter.saveTheme(slug, data || {}));
+ipcMain.handle('orbiter:usage', () => store.getUsage());
+ipcMain.handle('orbiter:win', (_e, a) => { if (!orbWin) return; if (a === 'min') orbWin.minimize(); else if (a === 'max') (orbWin.isMaximized() ? orbWin.unmaximize() : orbWin.maximize()); else orbWin.close(); });
 
 function registerHotkey() {
   globalShortcut.unregisterAll();

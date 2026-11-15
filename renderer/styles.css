@@ -770,3 +770,13 @@ label.toggle.mini { margin: 0; }
 .pw-dots { font-size: 12.5px; color: var(--text-2); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pw-row .cx-t { flex: 1; min-width: 0; }
 .empty-note { padding: 22px; text-align: center; color: var(--text-2); border: 1px dashed var(--line); border-radius: var(--radius); margin-top: 10px; }
+
+/* Orbit model tiers */
+.tiers .tier-row { display: grid; grid-template-columns: 96px 1.3fr 1.2fr 1fr; gap: 8px; align-items: center; margin: 8px 0; }
+.tier-row .tn { font-weight: 600; color: var(--text); display: flex; flex-direction: column; line-height: 1.15; }
+.tier-row .tn i { font-style: normal; font-weight: 400; font-size: 11px; color: var(--text-2); }
+.tier-row input { width: 100%; min-width: 0; background: var(--bg); border: 1px solid var(--line, rgba(127,127,127,.25)); color: var(--text); border-radius: 9px; padding: 8px 10px; font: inherit; font-size: 13px; }
+.tier-row input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.tiers label.inline { display: inline-flex; flex-direction: row; white-space: nowrap; align-items: center; gap: 8px; margin: 8px 18px 0 0; font-size: 13px; }
+.tiers label.inline select, .tier-pick { background: var(--bg); color: var(--text); border: 1px solid var(--line, rgba(127,127,127,.25)); border-radius: 9px; padding: 6px 8px; font: inherit; font-size: 12.5px; }
+.tier-pick { margin-left: auto; margin-right: 8px; }

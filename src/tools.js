@@ -110,6 +110,15 @@ const TOOL_SCHEMAS = [
   fn('panel_delete', 'Remove a panel from Home.', { id: { type: 'string' } }, ['id']),
   fn('project_create', 'Create a project: a separate space with its own chat, files folder and brief, for a body of work that will keep going (an app, an exam plan, a client).', { name: { type: 'string' }, about: { type: 'string', description: 'One or two lines on what it is for.' } }, ['name']),
   fn('project_list', 'List the user\'s projects.', {}),
+  fn('orbiter_status', 'See every Orbiter (coding agent) session: folder, whether it is working and on what step, mode, model tier, todo progress, last reply.', {}),
+  fn('orbiter_handoff', 'Hand coding work to Orbiter, the coding agent. Pass the full task plus everything you already gathered so nothing is redone. Starts a new session in the folder (or continues session_id) and opens the Orbiter window.', {
+    task: { type: 'string', description: 'The complete coding task, self-contained.' },
+    context: { type: 'string', description: 'What you already know: relevant files, errors, decisions, findings. Saves Orbiter re-reading.' },
+    folder: { type: 'string', description: 'The project folder (absolute path). Omit to use the last Orbiter folder.' },
+    session_id: { type: 'string', description: 'Continue this existing Orbiter session instead of starting a new one.' },
+    tier: { type: 'string', enum: ['spark', 'pulse', 'surge'], description: 'Model tier. Default: Orbiter\'s setting.' },
+    mode: { type: 'string', enum: ['ask', 'acceptEdits', 'plan', 'auto'], description: 'Permission mode. Default: Orbiter\'s setting.' },
+  }, ['task']),
   fn('project_brief', 'Replace this project\'s brief (its standing memory: goal, decisions, files, open threads). Send the whole brief in markdown. Only works inside a project chat.', { content: { type: 'string' } }, ['content']),
 ];
 
@@ -471,6 +480,18 @@ function buildTools(agent, lane = { id: 'main' }) {
     async panel_delete({ id }) { if (!hub.panel(id)) throw new Error(`No panel ${id}.`); hub.deletePanel(id); agent.emit({ type: 'panels_changed' }); return 'Removed from Home.'; },
     async project_create({ name, about }) { const p = hub.createProject({ name, about }); agent.emit({ type: 'projects_changed' }); return `Created project "${p.name}" (${p.id}). Its files folder: ${hub.filesDir(p.id)}. The user can open it from Projects.`; },
     async project_list() { return hub.projects().map(p => `${p.id} | ${p.name} | ${p.about || ''}`).join('\n') || '(no projects)'; },
+    async orbiter_status() { return agent.orbiter ? agent.orbiter.statusText() : 'Orbiter is not available.'; },
+    async orbiter_handoff({ task, context, folder, session_id, tier, mode }) {
+      const o = agent.orbiter; if (!o) throw new Error('Orbiter is not available.');
+      let sess = session_id && o.session(session_id);
+      if (!sess) {
+        if (folder && !fs.existsSync(expand(folder, os.homedir()))) throw new Error(`Folder not found: ${folder}. Ask the user which folder.`);
+        sess = o.createSession({ folder: folder ? expand(folder, os.homedir()) : undefined, tier, mode, projectId: lane.project || null, name: String(task).split('\n')[0].slice(0, 40) });
+      }
+      if (agent.openOrbiter) agent.openOrbiter(sess.id);
+      o.send(sess.id, task, { handoff: context || '' }).catch(() => {});
+      return `Handed to Orbiter: session "${sess.name}" in ${sess.folder} (${sess.tier}, mode ${sess.mode}). It is working now in the Orbiter window; the user can watch and steer there. Tell them in one line.`;
+    },
     async project_brief({ content }) {
       if (!lane.project) throw new Error('project_brief only works inside a project chat.');
       hub.updateProject(lane.project, { brief: String(content || '').slice(0, 12000), updated: Date.now() });

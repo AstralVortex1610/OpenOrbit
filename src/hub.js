@@ -167,14 +167,15 @@ function install(Agent) {
     emit({ type: 'user_message', id: msg.id, text, images: (attachments || []).map(a => a.dataUrl) });
     this.hub.updateProject(pid, { updated: Date.now() });
     const laneObj = { id: lane, project: pid };
+    const tier = p && p.tier ? this.tierSettings(p.tier) : null; // a project can pin its own model tier
     const res = await this._loop({
-      lane, emit,
+      lane, emit, settings: tier ? tier.settings : undefined,
       system: () => this._systemPrompt('main') + projectSection(this.hub.project(pid) || p, this.hub),
       context: () => this._contextMessages(this.hub.thread(pid), 50),
       append,
       tools: buildTools(this, laneObj),
       schemas: schemasFor(n => !NO_PROJECT.has(n)),
-      model: s.model, maxSteps: Number(s.maxSteps) || 25, streamToUI: true,
+      model: tier ? tier.model : s.model, maxSteps: Number(s.maxSteps) || 25, streamToUI: true,
     });
     if (laneObj.browser && laneObj.browser.page) laneObj.browser.close().catch(() => {});
     if (res.limit) { emit({ type: 'error', message: `I hit my step limit (${res.limit}) on this one. Say "continue" and I'll keep going.` }); return; }

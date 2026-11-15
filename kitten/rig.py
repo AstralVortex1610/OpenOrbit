@@ -331,7 +331,7 @@ class Rig:
         nx, ny = -math.sin(ang), math.cos(ang)  # body "down" normal
         anchors = {"h": pel, "f": che}
         feet = {}
-        far_items, near_items, details, raised = [], [], [], []
+        far_items, near_items, details, raised, raised_far = [], [], [], [], []
         for n, leg in self.legs.items():
             base = anchors[n[0]]
             hx = base[0] + leg.hip[0] * math.cos(ang) - leg.hip[1] * math.sin(ang)
@@ -404,8 +404,9 @@ class Rig:
                 circles.append(("c", hx + 1, hy - 3, 12.5 * (1 + 0.15 * P["sit"])))  # thigh
             paw_ang = 0.0 if not lifted else (0.5 if n[0] == "f" else -0.4)
             circles.append(("e", foot[0] + 2.0, foot[1] - 3.2, pr + 1.2, 4.6, paw_ang))
-            if n == "fn" and P["paw"] > 0.5 and P["paw_y"] < -50:
-                raised.extend(circles)  # paw up by the face: drawn over the head (salute, groom)
+            if (n == "fn" and P["paw"] > 0.5 and P["paw_y"] < -50) or (self.mode == "hang" and n[0] == "f"):
+                # paw up by the face / gripping a ledge: drawn over the head
+                (raised_far if leg.far else raised).extend(circles)
             else:
                 (far_items if leg.far else near_items).extend(circles)
             if not leg.far:
@@ -469,6 +470,8 @@ class Rig:
         items.append(("lines", "bandana_line", [[W(nkx - 3, nky + 2), W(nkx + 5, nky + 13)]], 1.2 * sc))
         hrot = P["head_rot"] - math.degrees(lean) * 0.4 + P["look_down"] * 18
         items.append(self._head_item(nkx, nky + 2, hrot))
+        if raised_far:
+            items.append(("blob", "far", conv(raised_far)))
         if raised:
             items.append(("blob", "body", conv(raised)))
         return items

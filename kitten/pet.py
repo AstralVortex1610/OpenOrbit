@@ -448,8 +448,9 @@ class Pet(QWidget):
         r.expr = "neutral"
         r.set(sit=1.0)
         yield from self.wait(0.3)
-        r.set(paw=1.0, paw_x=46, paw_y=-104)
-        yield from self.wait(0.7)
+        for k in range(4):  # paw up and a little wave
+            r.set(paw=1.0, paw_x=56 + (4 if k % 2 else -4), paw_y=-46 - (6 if k % 2 else 0))
+            yield from self.wait(0.18)
         r.set(paw=0.0)
         yield from self.wait(0.25)
         r.set(sit=0.0)

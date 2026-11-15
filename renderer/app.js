@@ -156,7 +156,9 @@
   }
   const GLOBAL = new Set(['tasks_changed', 'memory_changed', 'speak', 'panels_changed', 'projects_changed', 'updates_changed']);
   api.on('agent:event', (e) => {
-    if (e.type === 'model_switch') { toast(`${e.from} hit a limit, so Orbit switched to ${e.model}.`); return; }
+    if (e.type === 'model_switch') { toast(e.reason === 'picked' ? `Now using ${e.model}. The task carries on from where it was.` : `${e.from} isn't answering right now, so Orbit switched to ${e.model}.`); return; }
+    if (e.type === 'models_changed') { paintModelChip(); return; }
+    if (e.type === 'stream_reset') { const sg = segs.get(e.id); if (sg) { sg.el.remove(); segs.delete(e.id); } return; }
     if (e.type === 'approval' || e.type === 'question') pendingCards.set(e.id, { scope: e.project || 'main', e });
     if (e.type === 'approval_done' || e.type === 'question_done') pendingCards.delete(e.id);
     if (GLOBAL.has(e.type)) { window.dispatchEvent(new CustomEvent('orbit-hub', { detail: e })); if (!['panels_changed', 'projects_changed', 'updates_changed'].includes(e.type)) handleEvent(e); return; }
@@ -412,10 +414,53 @@
     if (view === 'tasks') loadTasks();
     if (view === 'memory') loadMemory();
     if (view === 'settings') loadSettings();
-    if (view === 'chat') setTimeout(() => input.focus(), 50);
+    if (view === 'chat') { setTimeout(() => input.focus(), 50); paintModelChip(); }
+    if (view === 'orbiter') { orbFrame($('#orbiterFrame'), 'orbiter.html'); setTimeout(() => { try { $('#orbiterFrame').contentWindow.postMessage({ type: 'focus' }, '*'); } catch {} }, 80); }
   }
   $$('.rail-btn').forEach(b => b.onclick = () => show(b.dataset.view, b.dataset.view === 'chat' ? { scope: 'main' } : {}));
-  $('#orbiterBtn').onclick = () => api.openOrbiter();
+  // ---------- Orbiter, inside this window ----------
+  function orbFrame(frame, src, session) {
+    const want = src + (session ? (src.includes('?') ? '&' : '?') + 'session=' + encodeURIComponent(session) : '');
+    if (!frame.dataset.src || frame.dataset.src !== src) { frame.dataset.src = src; frame.src = want; return; }
+    if (session && frame.contentWindow) frame.contentWindow.postMessage({ type: 'open_session', session }, '*');
+  }
+  window.orbFrame = orbFrame;
+  api.on('ui:orbiter', async (d) => {
+    if (d && d.project) { await openScope(d.project); show('chat'); window.dispatchEvent(new CustomEvent('orbit-proj-mode', { detail: { mode: 'orbiter', session: d.session } })); return; }
+    show('orbiter'); orbFrame($('#orbiterFrame'), 'orbiter.html', d && d.session);
+  });
+
+  // ---------- one model picker: chat, projects and Orbiter share the same choices ----------
+  let modelChoices = [];
+  async function paintModelChip() {
+    try { modelChoices = await api.models.choices(); } catch { modelChoices = []; }
+    let tier = '';
+    if (scope === 'main') tier = (await api.getSettings()).chatTier || '';
+    else { const p = await api.projects.get(scope); tier = (p && p.tier) || ''; }
+    const c = modelChoices.find(x => x.id === tier) || modelChoices[0] || { name: 'Main', model: '' };
+    const main = modelChoices[0] || {};
+    $('#modelChip span').textContent = `${c.name} · ${c.model || main.model || 'no model'}`;
+    $('#modelChip').dataset.tier = tier;
+  }
+  window.paintModelChip = paintModelChip;
+  $('#modelChip').onclick = (ev) => {
+    ev.stopPropagation();
+    document.querySelector('.model-menu')?.remove();
+    const now = $('#modelChip').dataset.tier || '';
+    const m = document.createElement('div'); m.className = 'model-menu';
+    m.innerHTML = `<div class="hd">${scope === 'main' ? 'Model for chat' : 'Model for this project'} · switches running work too</div>` + modelChoices.map(c => `<button data-t="${c.id}" class="${c.id === now ? 'on' : ''}"><b>${escapeHtml(c.name)}</b><small class="${c.model ? '' : 'unset'}">${c.model ? escapeHtml(c.model) : 'not set · uses main'}</small></button>`).join('');
+    document.body.appendChild(m);
+    const r = $('#modelChip').getBoundingClientRect();
+    m.style.left = Math.max(8, Math.min(r.left, innerWidth - m.offsetWidth - 8)) + 'px';
+    m.style.top = (r.top - m.offsetHeight - 8) + 'px';
+    m.querySelectorAll('button').forEach(b => b.onclick = async () => {
+      m.remove();
+      const res = await api.models.pick(scope === 'main' ? 'main' : 'proj:' + scope, b.dataset.t);
+      if (scope === 'main' && settings) settings.chatTier = b.dataset.t;
+      paintModelChip(); toast(`Now using ${res.label}`);
+    });
+    setTimeout(() => document.addEventListener('click', () => m.remove(), { once: true }), 0);
+  };
 
   // ---------- switching conversations (main chat or a project) ----------
   function msgText(m) {
@@ -453,6 +498,8 @@
       renderThread(t);
     }
     for (const { scope: s, e } of pendingCards.values()) if (s === scope) handleEvent(e);
+    paintModelChip();
+    window.dispatchEvent(new CustomEvent('orbit-scope-opened', { detail: { scope } }));
     setBusy(!!busyMap[scope]);
     if (busyMap[scope]) turn = newTurn();
     scrollDown(true);
@@ -517,7 +564,7 @@
   $('#openMemFolder').onclick = () => api.openMemoryFolder();
 
   // ---------- settings ----------
-  const FIELDS = ['orbitVoice', 'orbitStt', 'orbitTts', 'orbitPhononVoice', 'orbitWinVoice', 'orbitPauseMs', 'liveEngine', 'liveGeminiVoice', 'liveOpenaiVoice', 'baseUrl', 'model', 'fastModel', 'voiceModel', 'browserChannel', 'phoneWhen', 'phoneIdleMinutes', 'ntfyServer', 'transcribeModel', 'userName', 'approvalMode', 'dailyTokenCap', 'contextBudget', 'maxSteps', 'hotkey', 'maxWorkers', 'imageModel', 'imageBaseUrl', 'googleClientId', 'visionModel', 'chatTier', 'orbiterTier'];
+  const FIELDS = ['orbitVoice', 'orbitStt', 'orbitTts', 'orbitPhononVoice', 'orbitWinVoice', 'orbitPauseMs', 'liveEngine', 'liveGeminiVoice', 'liveOpenaiVoice', 'baseUrl', 'model', 'fastModel', 'voiceModel', 'browserChannel', 'phoneWhen', 'phoneIdleMinutes', 'ntfyServer', 'transcribeModel', 'userName', 'approvalMode', 'dailyTokenCap', 'contextBudget', 'maxSteps', 'hotkey', 'maxWorkers', 'imageModel', 'imageBaseUrl', 'googleClientId', 'visionModel'];
   const TOGGLES = ['autoUpdate', 'talkFirst', 'autoCall', 'orbitGpu', 'wakeOpensLive', 'voiceReplies', 'closeToTray', 'startWithWindows', 'wakeWord', 'ntfyEnabled', 'telegramEnabled', 'osintBeta'];
   // Edits you haven't saved yet survive any refresh of this screen (a new ntfy topic,
   // Telegram pairing, Google connect...). Before, those refreshes wiped the whole form.
@@ -557,8 +604,7 @@
     for (const t of ['spark', 'pulse', 'surge']) {
       const m = (settings.modelTiers || {})[t] || {};
       if (!dirty.has(`t-${t}-model`)) $(`#t-${t}-model`).value = m.model || '';
-      if (!dirty.has(`t-${t}-baseUrl`)) $(`#t-${t}-baseUrl`).value = m.baseUrl || '';
-      $(`#t-${t}-apiKey`).value = ''; $(`#t-${t}-apiKey`).placeholder = m.hasKey ? `Saved (${m.keyPreview})` : 'API key (optional)';
+      $(`#t-${t}-model`).placeholder = settings.model ? `Main (${settings.model})` : 'Main model';
     }
     for (const [el, prop, v] of keep) el[prop] = v;
     if (keep.length) syncLiveEngine();
@@ -593,13 +639,15 @@
       : st.status === 'latest' ? `You're on the latest version (${st.current}).`
       : st.status === 'available' ? `Orbit ${st.latest} is ready to install (you have ${st.current}).`
       : st.status === 'downloading' ? `Downloading ${st.latest}… ${st.progress || 0}%`
+      : st.status === 'ready' ? `Orbit ${st.latest} is downloaded. It installs by itself when Orbit is idle, or install it now.`
       : st.status === 'installing' ? 'Installing. Orbit will close and reopen in a few seconds.'
       : st.status === 'updated' ? `Updated to ${st.current}. You're all set.`
       : st.status === 'error' ? st.error : '';
     if (st.lastFailure && st.status === 'available') { el.textContent += ` Last try didn't install: ${st.lastFailure}`; el.style.color = 'var(--danger)'; }
-    go.style.display = st.status === 'available' || (st.status === 'error' && st.url) ? '' : 'none';
+    go.style.display = st.status === 'available' || st.status === 'ready' || (st.status === 'error' && st.url) ? '' : 'none';
     const bar = $('#updateBar');
     if (st.status === 'available' && !showUpdate.later) { $('#updateBarText').textContent = `Orbit ${st.latest} is out.`; $('#updateBarGo').style.display = ''; bar.classList.add('show'); }
+    else if (st.status === 'ready' && !showUpdate.later) { $('#updateBarText').textContent = `Orbit ${st.latest} is ready. It installs when Orbit is idle.`; $('#updateBarGo').style.display = ''; bar.classList.add('show'); }
     else if (st.status === 'downloading' && bar.classList.contains('show')) { $('#updateBarText').textContent = `Downloading ${st.latest}… ${st.progress || 0}%`; $('#updateBarGo').style.display = 'none'; }
     else if (st.status === 'updated' && !showUpdate.shown) { showUpdate.shown = true; toast(`Updated to Orbit ${st.current}`); }
     else if (st.status === 'error' && st.lastFailure && !showUpdate.later) { $('#updateBarText').textContent = `The update didn't install. Open Settings → Updates.`; $('#updateBarGo').style.display = 'none'; bar.classList.add('show'); }
@@ -749,9 +797,7 @@
     out.backupModels = readBackups();
     out.modelTiers = {};
     for (const t of ['spark', 'pulse', 'surge']) {
-      const row = { model: $(`#t-${t}-model`).value.trim(), baseUrl: $(`#t-${t}-baseUrl`).value.trim() };
-      const k = $(`#t-${t}-apiKey`).value.trim(); if (k) row.apiKey = k;
-      out.modelTiers[t] = row;
+      out.modelTiers[t] = { model: $(`#t-${t}-model`).value.trim(), baseUrl: '', clearKey: true }; // same provider and key as the Brain
     }
     const tg = $('#s-telegramToken').value.trim(); if (tg) out.telegramToken = tg;
     for (const k of ['liveGeminiKey', 'liveOpenaiKey', 'googleClientSecret', 'netlifyToken', 'imageApiKey', 'hibpKey']) { const v = $('#k-' + k).value.trim(); if (v) out[k] = v; }

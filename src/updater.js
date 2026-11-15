@@ -51,7 +51,7 @@ function applyScript(o) {
       '  if ($ok) { Log "updated to $want" } else { Log "UPDATE FAILED: files in $dest stayed locked or unwritable" }',
       '} else { Log "UPDATE FAILED: no $exe in the downloaded zip" }',
       'Remove-Item $flag -Force -ErrorAction SilentlyContinue',
-      'Start-Process -FilePath (Join-Path $dest $exe) -WorkingDirectory $dest',
+      o.relaunch === false ? 'Log "Orbit was closing, so it was not reopened"' : 'Start-Process -FilePath (Join-Path $dest $exe) -WorkingDirectory $dest',
       'Start-Sleep 5; Remove-Item -Recurse -Force (Split-Path $zip) -ErrorAction SilentlyContinue',
     ].join('\r\n');
 }
@@ -91,11 +91,22 @@ class Updater {
   }
   _set(patch) { this.state = { ...this.state, ...patch }; this.send('update:state', this.state); return this.state; }
 
+  // Automatic updates: check soon after launch and every hour; when a new version is out,
+  // download it in the background, then install it the moment Orbit is idle (or when it quits).
   startAuto(enabled) {
-    clearInterval(this.timer); this.timer = null;
+    clearInterval(this.timer); this.timer = null; clearTimeout(this._first);
+    this.auto = !!enabled;
     if (!enabled) return;
-    setTimeout(() => this.check(true).catch(() => {}), 15000);
-    this.timer = setInterval(() => this.check(true).catch(() => {}), 6 * 60 * 60 * 1000);
+    const run = () => this.autoStep().catch(() => {});
+    this._first = setTimeout(run, 10000);
+    this.timer = setInterval(run, 60 * 60 * 1000);
+  }
+  async autoStep() {
+    if (!this.auto || ['downloading', 'installing', 'ready'].includes(this.state.status)) return this.state;
+    const st = await this.check(true);
+    if (st.status === 'available' && process.platform === 'win32' && this.app.isPackaged) await this.download(true);
+    if (this.state.status === 'ready' && this.onReady) this.onReady(this.state);
+    return this.state;
   }
 
   async check(quiet) {
@@ -116,15 +127,22 @@ class Updater {
   }
 
   async install() {
+    if (this.state.status === 'ready' && this._zip && fs.existsSync(this._zip.zip)) return this.apply();
     if (this.state.status !== 'available' && this.state.status !== 'error') await this.check();
     if (!this.state.url) return this.state;
+    const got = await this.download(false);
+    if (got.status !== 'ready') return got;
+    return this.apply();
+  }
+
+  // Fetch the new zip into a temp folder. quiet: a background download that only shows when done.
+  async download(quiet) {
     if (process.platform !== 'win32' || !this.app.isPackaged) return this._set({ status: 'error', error: 'Updates install only in the packaged Windows app.' });
     const dest = path.dirname(process.execPath);
     try { fs.accessSync(dest, fs.constants.W_OK); } catch { return this._set({ status: 'error', error: `Orbit can't write to ${dest}. Move the Orbit folder somewhere like Documents, or download the new zip from GitHub.` }); }
-
     const work = fs.mkdtempSync(path.join(os.tmpdir(), 'orbit-update-'));
     const zip = path.join(work, 'Orbit.zip');
-    this._set({ status: 'downloading', progress: 0, error: '' });
+    this._set({ status: 'downloading', progress: 0, error: '', background: !!quiet });
     try {
       const r = await fetch(this.state.url, { headers: { 'User-Agent': 'Orbit-Updater' }, redirect: 'follow' });
       if (!r.ok) throw new Error(`download failed (${r.status})`);
@@ -140,22 +158,31 @@ class Updater {
       await new Promise((res, rej) => out.end(err => (err ? rej(err) : res())));
       if (total && got < total) throw new Error('download was cut short');
     } catch (e) {
-      return this._set({ status: 'error', error: `Update download failed: ${e.message}` });
+      return this._set({ status: quiet ? 'available' : 'error', error: `Update download failed: ${e.message}` });
     }
+    this._zip = { zip, work, dest };
+    return this._set({ status: 'ready', progress: 100 });
+  }
 
+  // Swap the files: a PowerShell script waits for Orbit to exit, copies the new build over it and reopens it.
+  // relaunch=false is used when Orbit is quitting anyway.
+  apply({ relaunch = true } = {}) {
+    if (!this._zip || !fs.existsSync(this._zip.zip)) return this._set({ status: 'error', error: 'The downloaded update is missing. Check again.' });
+    const { zip, work, dest } = this._zip;
     const exe = path.basename(process.execPath);
     const ps = path.join(work, 'apply.ps1');
     const log = path.join(this.app.getPath('userData'), 'update.log');
     const q = (s) => "'" + String(s).replace(/'/g, "''") + "'";
     // The script: wait for Orbit to exit (force it after 20 s), unpack, copy over this folder,
     // check the copy really landed, then reopen. Everything goes to update.log.
-    fs.writeFileSync(ps, applyScript({ zip, tmp: path.join(work, 'x'), dest, exe, log, want: this.state.latest, pid: process.pid, flag: applyingFlag(this.app) }), 'utf8');
+    fs.writeFileSync(ps, applyScript({ zip, tmp: path.join(work, 'x'), dest, exe, log, want: this.state.latest, pid: process.pid, flag: applyingFlag(this.app), relaunch }), 'utf8');
     // remember what we expect, so the next launch can tell if the update really landed
     try { fs.writeFileSync(path.join(this.app.getPath('userData'), 'update-pending.json'), JSON.stringify({ want: this.state.latest, from: this.state.current, at: Date.now() })); } catch {}
     this._set({ status: 'installing', progress: 100 });
     const child = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', ps], { detached: true, stdio: 'ignore', windowsHide: true, cwd: work });
     child.unref();
-    setTimeout(() => { this.onQuit && this.onQuit(); }, 800);
+    this._zip = null;
+    if (relaunch) setTimeout(() => { this.onQuit && this.onQuit(); }, 800);
     return this.state;
   }
 }

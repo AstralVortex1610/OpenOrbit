@@ -74,7 +74,7 @@ class Orbiter {
   createSession({ folder, name, tier, mode, projectId } = {}) {
     const s = this.store.getSettings();
     folder = folder || s.orbiterLastFolder || path.join(os.homedir(), 'Documents');
-    const sess = { id: uid(), name: name || path.basename(folder) || 'Session', folder, tier: tier || s.orbiterTier || 'pulse', mode: mode || s.orbiterMode || 'ask', projectId: projectId || null, created: Date.now(), updated: Date.now(), todos: [], tokens: 0, last: '' };
+    const sess = { id: uid(), name: name || path.basename(folder) || 'Session', folder, tier: tier !== undefined && tier !== null ? tier : (s.orbiterTier ?? ''), mode: mode || s.orbiterMode || 'ask', projectId: projectId || null, created: Date.now(), updated: Date.now(), todos: [], tokens: 0, last: '' };
     const l = this._index(); l.push(sess); this._saveIndex(l);
     try { this.store.saveSettings({ orbiterLastFolder: folder }); } catch {}
     this.emit({ type: 'orbiter_sessions' });
@@ -285,6 +285,7 @@ ${mem ? '\nProject and user memory (follow it):\n' + mem : ''}${todos}`;
     try {
       const res = await this.agent._loop({
         lane, emit, settings: tier.settings, model: tier.model, maxSteps: 80, streamToUI: true,
+        pick: () => { const t = this.tierSettings((this.session(id) || sess).tier); return { settings: t.settings, model: t.model }; },
         system: () => this._system(this.session(id) || sess),
         context: () => this.agent._contextMessages(this.thread(id), 120, (Number(this.store.getSettings().contextBudget) || 24000) * 2),
         append: (m) => { const t = this.thread(id); t.push({ ...m, ui: m.role === 'assistant' ? true : m.ui }); this.saveThread(id, t); },

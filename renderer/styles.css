@@ -780,3 +780,30 @@ label.toggle.mini { margin: 0; }
 .tiers label.inline { display: inline-flex; flex-direction: row; white-space: nowrap; align-items: center; gap: 8px; margin: 8px 18px 0 0; font-size: 13px; }
 .tiers label.inline select, .tier-pick { background: var(--bg); color: var(--text); border: 1px solid var(--line, rgba(127,127,127,.25)); border-radius: 9px; padding: 6px 8px; font: inherit; font-size: 12.5px; }
 .tier-pick { margin-left: auto; margin-right: 8px; }
+
+/* ---- v0.12.1: Orbiter inside Orbit, one model picker ---- */
+.orb-frame { border: 0; width: 100%; flex: 1; min-height: 0; background: var(--bg); display: block; }
+.view-orbiter { padding: 0; }
+.proj-orb { display: none; }
+body.proj-orbiter .view-chat .proj-orb { display: block; }
+body.proj-orbiter .view-chat .scroller, body.proj-orbiter .view-chat .composer-wrap { display: none; }
+.seg { margin-left: auto; display: inline-flex; padding: 3px; border-radius: 10px; background: var(--bg); border: 1px solid var(--line); gap: 2px; }
+.seg button { padding: 5px 12px; border-radius: 7px; font-size: 12.5px; color: var(--text-2); }
+.seg button.on { background: var(--accent); color: #fff; }
+.model-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: inherit; font-size: 12px; white-space: nowrap; max-width: 240px; align-self: center; cursor: pointer; opacity: .85; }
+.model-chip:hover { opacity: 1; border-color: var(--accent); }
+.model-chip svg { width: 13px; height: 13px; fill: none; stroke: var(--accent); stroke-width: 1.5; flex: none; }
+.model-chip span { overflow: hidden; text-overflow: ellipsis; }
+.model-menu { position: fixed; z-index: 90; min-width: 300px; padding: 6px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); box-shadow: 0 18px 50px rgba(0,0,0,.35); animation: rise .18s var(--ease); }
+.model-menu .hd { padding: 6px 10px 8px; font-size: 11.5px; opacity: .65; }
+.model-menu button { display: flex; width: 100%; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; text-align: left; color: inherit; }
+.model-menu button:hover { background: var(--surface-2); }
+.model-menu button.on { outline: 1px solid var(--accent); }
+.model-menu b { min-width: 52px; font-weight: 600; }
+.model-menu small { margin-left: auto; opacity: .65; font-family: "Cascadia Code", Consolas, monospace; font-size: 11px; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-menu small.unset { font-family: inherit; font-style: italic; }
+.tiers-compact { margin: 18px 0 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.tiers-compact > b { font-size: 13px; }
+.tier-line { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 8px; }
+.tier-line label { display: flex; flex-direction: column; gap: 5px; margin: 0; }
+.tier-line label span { font-size: 12.5px; font-weight: 600; } .tier-line label i { font-weight: 400; opacity: .6; font-style: normal; }

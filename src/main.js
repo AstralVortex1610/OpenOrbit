@@ -14,7 +14,6 @@ const { Orbiter, TIERS, MODES } = require('./orbiter');
 app.commandLine.appendSwitch('enable-features', 'SharedArrayBuffer');
 
 let win = null;
-let orbWin = null;
 let tray = null;
 let quitting = false;
 const ICON = path.join(__dirname, '..', 'assets', 'icon.png');
@@ -23,6 +22,15 @@ const store = new Store(app.getPath('userData'), safeStorage);
 const send = (channel, payload) => { if (win && !win.isDestroyed()) win.webContents.send(channel, payload); };
 const updater = new Updater({ app, send: (c, p) => send(c, p) });
 // Quit for real so the update can replace the files: close windows, stop helpers, and force exit if anything hangs.
+// A background download finished: install now if Orbit is idle and you're not using it, else at the next idle moment or on quit.
+function orbitIdle() { return !agent.mainBusy && !(agent.stepCtls && agent.stepCtls.size) && !(agent.workers && agent.workers.size) && !(orbiter && orbiter.busy && orbiter.busy.size); }
+function userNotLooking() { let idle = 0; try { idle = powerMonitor.getSystemIdleTime(); } catch {} return !(win && win.isVisible() && win.isFocused()) || idle >= 300; }
+updater.onReady = (st) => {
+  send('agent:event', { type: 'notice', title: `Orbit ${st.latest} is ready`, text: 'It installs by itself when Orbit is idle, or now from Settings → Updates.' });
+  clearInterval(updater._idleTimer);
+  const tryNow = () => { if (updater.state.status !== 'ready') return clearInterval(updater._idleTimer); if (orbitIdle() && userNotLooking()) { clearInterval(updater._idleTimer); updater.apply(); } };
+  updater._idleTimer = setInterval(tryNow, 60 * 1000); tryNow();
+};
 updater.onQuit = () => { quitting = true; setTimeout(() => app.exit(0), 3000); try { app.quit(); } catch { app.exit(0); } };
 
 function showWindow() {
@@ -43,7 +51,7 @@ const agent = new Agent({
   store,
   emit: (evt) => {
     // Approvals and questions from an Orbiter session belong in the Orbiter window.
-    if (String(evt.lane || '').startsWith('orb-')) { sendOrb('orbiter:event', { ...evt, session: String(evt.lane).slice(4) }); if (!orbWin || orbWin.isDestroyed() || !orbWin.isFocused()) send('agent:event', { type: 'notice', title: 'Orbiter needs you', text: evt.title || evt.question || '' }); return; }
+    if (String(evt.lane || '').startsWith('orb-')) { sendOrb('orbiter:event', { ...evt, session: String(evt.lane).slice(4) }); if ((evt.type === 'approval' || evt.type === 'question') && !(win && win.isVisible() && win.isFocused())) notify('Orbiter needs you', evt.title || evt.question || ''); return; }
     send('agent:event', evt); if (live) live.onAgentEvent(evt);
   },
   // Orbit reaching out: a desktop notification when the window is not in front,
@@ -69,21 +77,18 @@ function shouldPingPhone(focused) {
   return userAway();
 }
 
-function sendOrb(channel, payload) { if (orbWin && !orbWin.isDestroyed()) orbWin.webContents.send(channel, payload); }
+// Orbiter lives inside the main window (as a frame in the Orbiter view and in each project), so its events go to those frames.
+function sendOrb(channel, payload) {
+  if (!win || win.isDestroyed()) return;
+  try { for (const f of win.webContents.mainFrame.framesInSubtree) { if (f !== win.webContents.mainFrame && /orbiter\.html/.test(f.url || '')) f.send(channel, payload); } } catch {}
+}
 const orbiter = new Orbiter({ agent, store, emit: (evt) => { sendOrb('orbiter:event', evt); if (evt.type === 'orbiter_busy' || evt.type === 'orbiter_sessions') send('agent:event', { type: 'orbiter_changed' }); } });
 agent.orbiter = orbiter;
 agent.openOrbiter = (sessionId) => openOrbiter(sessionId);
 function openOrbiter(sessionId) {
-  if (orbWin && !orbWin.isDestroyed()) { orbWin.show(); orbWin.focus(); if (sessionId) sendOrb('orbiter:open', sessionId); return; }
-  orbWin = new BrowserWindow({
-    width: 1320, height: 840, minWidth: 940, minHeight: 600, backgroundColor: '#141311', title: 'Orbiter', icon: ICON,
-    frame: false, titleBarStyle: 'hidden', show: false,
-    webPreferences: { preload: path.join(__dirname, 'preload-orbiter.js'), contextIsolation: true, nodeIntegration: false },
-  });
-  orbWin.loadFile(path.join(__dirname, '..', 'renderer', 'orbiter.html'), { query: sessionId ? { session: sessionId } : {} });
-  orbWin.once('ready-to-show', () => orbWin.show());
-  orbWin.on('closed', () => { orbWin = null; });
-  orbWin.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
+  showWindow();
+  const sess = sessionId ? orbiter.session(sessionId) : null;
+  send('ui:orbiter', { session: sessionId || null, project: (sess && sess.projectId) || null });
 }
 
 live = new Live({ store, agent, emit: (evt) => send('live:event', evt) });
@@ -128,6 +133,7 @@ function createWindow() {
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
+      nodeIntegrationInSubFrames: true, // the embedded Orbiter frame gets the same bridge
       contextIsolation: true,
       nodeIntegration: false,
       backgroundThrottling: false, // keeps the wake word listening while Orbit sits in the tray
@@ -165,6 +171,8 @@ ipcMain.handle('settings:save', (_e, s) => {
   ensurePhoneIds();
   phone.restart();
   updater.startAuto(cur.autoUpdate !== false);
+  agent.retarget(); // a new model choice takes over running work at once
+  sendOrb('orbiter:event', { type: 'models_changed' }); send('agent:event', { type: 'models_changed' });
   return store.getSettingsForUI();
 });
 // ---------- files Orbit made ----------
@@ -248,7 +256,20 @@ ipcMain.handle('ui:scope', (_e, scope) => { agent.viewScope = scope || 'main'; r
 ipcMain.handle('projects:list', () => hub.projects().map(p => ({ ...p, busy: agent.projectBusy(p.id), files: hub.listFiles(p.id).length })));
 ipcMain.handle('projects:get', (_e, id) => { const p = hub.project(id); return p ? { ...p, busy: agent.projectBusy(id), folder: hub.filesDir(id), fileList: hub.listFiles(id).slice(0, 100).map(({ path: _p, ...f }) => f) } : null; });
 ipcMain.handle('projects:create', (_e, d) => hub.createProject(d || {}));
-ipcMain.handle('projects:update', (_e, id, patch) => { const allowed = {}; for (const k of ['name', 'about', 'brief', 'tier']) if (patch && typeof patch[k] === 'string') allowed[k] = patch[k]; return hub.updateProject(id, allowed); });
+ipcMain.handle('projects:update', (_e, id, patch) => { const allowed = {}; for (const k of ['name', 'about', 'brief', 'tier']) if (patch && typeof patch[k] === 'string') allowed[k] = patch[k]; const r = hub.updateProject(id, allowed); if (allowed.tier !== undefined) agent.retarget('proj-' + id); return r; });
+// ----- one model picker for chat, projects and Orbiter -----
+// scope: 'main' (chat), 'proj:<id>' (a project), 'orb:<id>' (an Orbiter session). tier: '' = main model, or spark/pulse/surge.
+ipcMain.handle('models:choices', () => agent.modelChoices());
+ipcMain.handle('models:pick', (_e, scope, tier) => {
+  tier = ['', 'spark', 'pulse', 'surge'].includes(tier) ? tier : '';
+  scope = String(scope || 'main');
+  if (scope === 'main') { store.saveSettings({ chatTier: tier }); agent.retarget('main'); agent.retarget('side-*'); }
+  else if (scope.startsWith('proj:')) { hub.updateProject(scope.slice(5), { tier }); agent.retarget('proj-' + scope.slice(5)); }
+  else if (scope.startsWith('orb:')) { orbiter.updateSession(scope.slice(4), { tier }); agent.retarget('orb-' + scope.slice(4)); }
+  const t = agent.tierSettings(tier);
+  send('agent:event', { type: 'models_changed' }); sendOrb('orbiter:event', { type: 'models_changed' });
+  return { ok: true, model: t.model, label: t.label };
+});
 ipcMain.handle('projects:delete', (_e, id) => { agent.stopLane('proj-' + id); hub.deleteProject(id); return true; });
 ipcMain.handle('projects:thread', (_e, id) => hub.thread(id).filter(m => m.ui));
 ipcMain.handle('projects:clear', (_e, id) => { hub.clearThread(id); return true; });
@@ -297,11 +318,12 @@ ipcMain.handle('app:info', () => ({ version: app.getVersion(), platform: process
 
 // ----- Orbiter -----
 ipcMain.handle('orbiter:open', (_e, id) => { openOrbiter(id); return true; });
-ipcMain.handle('orbiter:meta', () => ({ tiers: TIERS, modes: MODES, settings: (({ orbiterTier, orbiterMode, orbiterTheme, orbiterAllow, modelTiers, model }) => ({ orbiterTier, orbiterMode, orbiterTheme, orbiterAllow, modelTiers, model }))(store.getSettingsForUI()), themes: orbiter.themes(), themesDir: orbiter.themesDir, version: app.getVersion() }));
+ipcMain.handle('orbiter:meta', () => ({ choices: agent.modelChoices(), tiers: TIERS, modes: MODES, settings: (({ orbiterTier, orbiterMode, orbiterTheme, orbiterAllow, modelTiers, model }) => ({ orbiterTier, orbiterMode, orbiterTheme, orbiterAllow, modelTiers, model }))(store.getSettingsForUI()), themes: orbiter.themes(), themesDir: orbiter.themesDir, version: app.getVersion() }));
 ipcMain.handle('orbiter:sessions', () => orbiter.sessions());
 ipcMain.handle('orbiter:session', (_e, id) => orbiter.session(id));
 ipcMain.handle('orbiter:create', (_e, d) => orbiter.createSession(d || {}));
-ipcMain.handle('orbiter:update', (_e, id, patch) => { const ok = {}; for (const k of ['name', 'tier', 'mode', 'folder']) if (patch && patch[k] !== undefined) ok[k] = patch[k]; return orbiter.updateSession(id, ok); });
+ipcMain.handle('orbiter:update', (_e, id, patch) => { const ok = {}; for (const k of ['name', 'tier', 'mode', 'folder']) if (patch && patch[k] !== undefined) ok[k] = patch[k]; const r = orbiter.updateSession(id, ok); if (ok.tier !== undefined) agent.retarget('orb-' + id); return r; });
+ipcMain.handle('orbiter:project', (_e, pid) => { const p = pid && hub.project(pid); return p ? { id: p.id, name: p.name, color: p.color, folder: p.folder || hub.filesDir(p.id), tier: p.tier || '' } : null; });
 ipcMain.handle('orbiter:delete', (_e, id) => { orbiter.deleteSession(id); return true; });
 ipcMain.handle('orbiter:thread', (_e, id) => orbiter.thread(id).filter(m => m.ui || m.role === 'tool').map(m => ({ role: m.role, content: typeof m.content === 'string' ? m.content : '', display: m.display, at: m.at, id: m.id, checkpoint: m.checkpoint, name: m.name, compact: m.compact, tool_calls: m.tool_calls ? m.tool_calls.map(c => ({ id: c.id, name: c.function.name, args: c.function.arguments })) : undefined, tool_call_id: m.tool_call_id })));
 ipcMain.handle('orbiter:send', (_e, id, text) => { orbiter.send(id, text).catch(() => {}); return true; });
@@ -313,12 +335,12 @@ ipcMain.handle('orbiter:rewind', (_e, id, cp, opts) => { try { return { ok: true
 ipcMain.handle('orbiter:compact', async (_e, id, focus) => { try { return { ok: true, text: await orbiter.compact(id, focus) }; } catch (e) { return { ok: false, error: e.message }; } });
 ipcMain.handle('orbiter:init', (_e, id) => { orbiter.init(id).catch(() => {}); return true; });
 ipcMain.handle('orbiter:memory', (_e, id) => { const s = orbiter.session(id); return s ? orbiter.memoryFiles(s.folder).map(m => ({ path: m.path, scope: m.scope, size: m.text.length })) : []; });
-ipcMain.handle('orbiter:pickFolder', async () => { const r = await dialog.showOpenDialog(orbWin || win, { properties: ['openDirectory'] }); return r.canceled ? null : r.filePaths[0]; });
+ipcMain.handle('orbiter:pickFolder', async () => { const r = await dialog.showOpenDialog(win, { properties: ['openDirectory'] }); return r.canceled ? null : r.filePaths[0]; });
 ipcMain.handle('orbiter:openPath', (_e, p) => (p && fs.existsSync(p) ? shell.openPath(p) : 'not found'));
 ipcMain.handle('orbiter:saveSettings', (_e, patch) => { const ok = {}; for (const k of ['orbiterTier', 'orbiterMode', 'orbiterTheme', 'orbiterAllow']) if (patch && patch[k] !== undefined) ok[k] = patch[k]; store.saveSettings(ok); return true; });
 ipcMain.handle('orbiter:saveTheme', (_e, slug, data) => orbiter.saveTheme(slug, data || {}));
 ipcMain.handle('orbiter:usage', () => store.getUsage());
-ipcMain.handle('orbiter:win', (_e, a) => { if (!orbWin) return; if (a === 'min') orbWin.minimize(); else if (a === 'max') (orbWin.isMaximized() ? orbWin.unmaximize() : orbWin.maximize()); else orbWin.close(); });
+ipcMain.handle('orbiter:win', () => true); // Orbiter is part of the main window now
 
 function registerHotkey() {
   globalShortcut.unregisterAll();
@@ -349,6 +371,7 @@ if (updateInProgress(app)) {
     setTimeout(() => agent.connectors.restart().catch(e => console.error(e)), 3000);
   });
   app.on('before-quit', () => {
+  if (updater.state.status === 'ready') { try { updater.apply({ relaunch: false }); } catch {} }
   if (agent && agent.browser) agent.browser.close(); live.stop(); phone.stopAll(); try { agent.connectors.stopAll(); } catch {} quitting = true; });
   app.on('will-quit', () => globalShortcut.unregisterAll());
   app.on('window-all-closed', (e) => { /* stay alive in tray */ });

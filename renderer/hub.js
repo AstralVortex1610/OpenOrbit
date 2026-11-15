@@ -223,7 +223,6 @@
     $('#scopeName').textContent = cur.name; $('#scopeAbout').textContent = cur.about || '';
     const m = $('#scopeMono'); m.textContent = cur.name.slice(0, 1).toUpperCase(); m.style.setProperty('--c', cur.color);
     $('#briefText').value = cur.brief || ''; $('#briefSave').disabled = true;
-    $('#projTier').value = cur.tier || '';
     $('#fileList').innerHTML = (cur.fileList || []).length ? cur.fileList.map(f => `<button class="file" data-n="${esc(f.name)}">${I.file}<span>${esc(f.name)}</span><small>${f.size > 1048576 ? (f.size / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(f.size / 1024)) + ' KB'}</small></button>`).join('') : '<div class="mini-empty">No files yet. Anything Orbit makes for this project lands here.</div>';
     $$('#fileList .file').forEach(b => b.onclick = () => api.projects.openFile(cur.id, b.dataset.n));
   }
@@ -232,7 +231,17 @@
   $('#drawerBtn').onclick = () => { $('#drawer').classList.toggle('open'); if ($('#drawer').classList.contains('open')) reloadCur(); };
   $('#briefText').addEventListener('input', () => ($('#briefSave').disabled = false));
   $('#briefSave').onclick = async () => { await api.projects.update(cur.id, { brief: $('#briefText').value }); $('#briefSave').disabled = true; A().toast('Brief saved'); };
-  $('#projTier').onchange = async () => { if (!cur) return; cur = { ...cur, tier: $('#projTier').value }; await api.projects.update(cur.id, { tier: $('#projTier').value }); A().toast($('#projTier').value ? `This project now uses ${$('#projTier').selectedOptions[0].text}` : 'This project uses the default model'); };
+  // Chat | Orbiter inside the project: Orbiter opens right here, scoped to this project's sessions and folder.
+  function projMode(mode, session) {
+    const on = mode === 'orbiter' && cur;
+    document.body.classList.toggle('proj-orbiter', !!on);
+    $$('#projSeg button').forEach(b => b.classList.toggle('on', b.dataset.m === (on ? 'orbiter' : 'chat')));
+    if (on) window.orbFrame($('#projOrbiter'), 'orbiter.html?project=' + encodeURIComponent(cur.id), session);
+    try { if (cur) localStorage.setItem('projMode:' + cur.id, on ? 'orbiter' : 'chat'); } catch {}
+  }
+  $$('#projSeg button').forEach(b => b.onclick = () => projMode(b.dataset.m));
+  window.addEventListener('orbit-proj-mode', (e) => projMode(e.detail.mode, e.detail.session));
+  window.addEventListener('orbit-scope-opened', (e) => { if (e.detail.scope === 'main') document.body.classList.remove('proj-orbiter'); else { let m = 'chat'; try { m = localStorage.getItem('projMode:' + e.detail.scope) || 'chat'; } catch {} projMode(m); } });
   $('#openProjFolder').onclick = () => api.projects.openFolder(cur.id);
   $('#clearProjChat').onclick = async () => { if (!confirm(`Clear the chat in "${cur.name}"? The brief and files stay.`)) return; await api.projects.clear(cur.id); A().openScope(cur.id); };
   $('#deleteProj').onclick = async () => {

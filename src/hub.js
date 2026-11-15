@@ -168,8 +168,9 @@ function install(Agent) {
     this.hub.updateProject(pid, { updated: Date.now() });
     const laneObj = { id: lane, project: pid };
     const tier = p && p.tier ? this.tierSettings(p.tier) : null; // a project can pin its own model tier
+    const pickProj = () => { const now = this.hub.project(pid) || p; const t = now && now.tier !== undefined && now.tier !== '' ? this.tierSettings(now.tier) : null; const st = this.store.getSettings(); return t ? { settings: t.settings, model: t.model } : { settings: st, model: st.model }; };
     const res = await this._loop({
-      lane, emit, settings: tier ? tier.settings : undefined,
+      lane, emit, settings: tier ? tier.settings : undefined, pick: pickProj,
       system: () => this._systemPrompt('main') + projectSection(this.hub.project(pid) || p, this.hub),
       context: () => this._contextMessages(this.hub.thread(pid), 50),
       append,

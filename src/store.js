@@ -59,7 +59,7 @@ const DEFAULT_SETTINGS = {
   // Orbit's own model line: aliases over any provider. Empty model = use the main model.
   modelTiers: {}, // { spark|pulse|surge: { model, baseUrl, apiKeyEnc } }
   chatTier: '', // '' = main model, else a tier id
-  orbiterTier: 'pulse',
+  orbiterTier: '', // '' = main model
   orbiterMode: 'ask', // ask | acceptEdits | plan | auto | bypass
   orbiterTheme: 'orbit-dark',
   orbiterLastFolder: '',
@@ -246,7 +246,7 @@ class Store {
         if (!t || !String(t.model || '').trim()) continue;
         const row = { model: String(t.model).trim(), baseUrl: String(t.baseUrl || '').trim() };
         if (typeof t.apiKey === 'string' && t.apiKey.trim()) row.apiKeyEnc = this._enc(t.apiKey.trim());
-        else if (!t.clearKey && old[id] && old[id].apiKeyEnc) row.apiKeyEnc = old[id].apiKeyEnc;
+        else if (!t.clearKey && row.baseUrl && old[id] && old[id].apiKeyEnc) row.apiKeyEnc = old[id].apiKeyEnc; // no own base URL = the Brain's provider and key
         out[id] = row;
       }
       next.modelTiers = out;

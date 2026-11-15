@@ -111,7 +111,7 @@ const TOOL_SCHEMAS = [
   fn('project_create', 'Create a project: a separate space with its own chat, files folder and brief, for a body of work that will keep going (an app, an exam plan, a client).', { name: { type: 'string' }, about: { type: 'string', description: 'One or two lines on what it is for.' } }, ['name']),
   fn('project_list', 'List the user\'s projects.', {}),
   fn('orbiter_status', 'See every Orbiter (coding agent) session: folder, whether it is working and on what step, mode, model tier, todo progress, last reply.', {}),
-  fn('orbiter_handoff', 'Hand coding work to Orbiter, the coding agent. Pass the full task plus everything you already gathered so nothing is redone. Starts a new session in the folder (or continues session_id) and opens the Orbiter window.', {
+  fn('orbiter_handoff', 'Hand coding work to Orbiter, the coding agent. Pass the full task plus everything you already gathered so nothing is redone. Starts a new session in the folder (or continues session_id) and opens Orbiter inside Orbit. Keeps the model the user picked for this chat or project unless tier is given.', {
     task: { type: 'string', description: 'The complete coding task, self-contained.' },
     context: { type: 'string', description: 'What you already know: relevant files, errors, decisions, findings. Saves Orbiter re-reading.' },
     folder: { type: 'string', description: 'The project folder (absolute path). Omit to use the last Orbiter folder.' },
@@ -486,11 +486,15 @@ function buildTools(agent, lane = { id: 'main' }) {
       let sess = session_id && o.session(session_id);
       if (!sess) {
         if (folder && !fs.existsSync(expand(folder, os.homedir()))) throw new Error(`Folder not found: ${folder}. Ask the user which folder.`);
-        sess = o.createSession({ folder: folder ? expand(folder, os.homedir()) : undefined, tier, mode, projectId: lane.project || null, name: String(task).split('\n')[0].slice(0, 40) });
+        // Default to where the request came from: a project's own folder and model, or the chat's model.
+        const st = agent.store.getSettings(); const proj = lane.project && agent.hub ? agent.hub.project(lane.project) : null;
+        const fromTier = tier !== undefined && tier !== null && tier !== '' ? tier : proj ? (proj.tier || '') : (st.chatTier || '');
+        const dir = folder ? expand(folder, os.homedir()) : proj ? agent.hub.filesDir(lane.project) : undefined;
+        sess = o.createSession({ folder: dir, tier: fromTier, mode, projectId: lane.project || null, name: String(task).split('\n')[0].slice(0, 40) });
       }
       if (agent.openOrbiter) agent.openOrbiter(sess.id);
       o.send(sess.id, task, { handoff: context || '' }).catch(() => {});
-      return `Handed to Orbiter: session "${sess.name}" in ${sess.folder} (${sess.tier}, mode ${sess.mode}). It is working now in the Orbiter window; the user can watch and steer there. Tell them in one line.`;
+      return `Handed to Orbiter: session "${sess.name}" in ${sess.folder} (${sess.tier}, mode ${sess.mode}). It is working now in Orbiter, inside Orbit${lane.project ? " (this project's Orbiter tab)" : ''}; the user can watch and steer there. Tell them in one line.`;
     },
     async project_brief({ content }) {
       if (!lane.project) throw new Error('project_brief only works inside a project chat.');

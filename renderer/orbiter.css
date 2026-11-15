@@ -266,3 +266,20 @@ body.retro95 .a .md, body.retro95 .tool .row, body.retro95 .hint { text-shadow: 
 body.retro95 .a .md code { color: #000; }
 body.retro95 .ask .t, body.retro95 .ask pre { color: #000; }
 body.retro95 .backdrop::after { display: none; }
+
+/* ---- embedded inside Orbit's window (v0.12.1) ---- */
+body.embedded .tb { -webkit-app-region: no-drag; height: 36px; padding-right: 8px; }
+body.embedded .tb-brand { width: 190px; }
+.tb-pane { width: 30px; height: 26px; display: grid; place-items: center; color: var(--dim); border-radius: 6px; }
+.tb-pane svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.4; }
+.tb-pane:hover { background: var(--hover); color: var(--text); }
+body.pane-off .pane { display: none; }
+body.pane-off .tb-pane { color: var(--faint); }
+body.in-project .tb-brand { width: 170px; }
+body.embedded .app { grid-template-columns: 210px 1fr 280px; height: calc(100% - 36px); }
+body.embedded.pane-off .app { grid-template-columns: 210px 1fr; }
+body.in-project .app { grid-template-columns: 200px 1fr 270px; }
+body.in-project.pane-off .app { grid-template-columns: 200px 1fr; }
+body.in-project .tb-brand { display: none; }
+body.embedded .new { white-space: nowrap; }
+@media (max-width: 1100px) { body.embedded .app { grid-template-columns: 180px 1fr; } body.embedded .pane { display: none; } }

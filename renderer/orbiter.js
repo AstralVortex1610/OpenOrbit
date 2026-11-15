@@ -6,6 +6,12 @@
   const md = (s) => (window.renderMarkdown ? window.renderMarkdown(s) : esc(s));
   const feed = $('#feed'), input = $('#input');
   let meta = null, sessions = [], cur = null, tab = 'todo', streaming = {}, lastEsc = 0;
+  // Orbiter runs inside Orbit's window: in the Orbiter view (all sessions) or inside one project (its sessions).
+  const QS = new URLSearchParams(location.search);
+  const PROJECT = QS.get('project') || '';
+  let project = null;
+  document.body.classList.add('embedded');
+  if (PROJECT) document.body.classList.add('in-project');
   const THEMES = [
     { id: 'orbit-dark', name: 'Orbit Dark' }, { id: 'orbit-light', name: 'Orbit Light' }, { id: 'midnight', name: 'Midnight' },
     { id: 'dark-daltonized', name: 'Dark (colour-blind)' }, { id: 'light-daltonized', name: 'Light (colour-blind)' }, { id: 'high-contrast', name: 'High contrast' },
@@ -23,7 +29,8 @@
     ['/cost', 'Tokens this session and today'], ['/status', 'Session, folder, model and mode'], ['/export', 'Copy the conversation as markdown'], ['/config', 'Orbiter settings'],
   ];
   const modeOf = (id) => (meta.modes.find(m => m.id === id) || meta.modes[0]);
-  const tierOf = (id) => (meta.tiers.find(t => t.id === id) || meta.tiers[1]);
+  const choiceOf = (id) => { const c = (meta.choices || []).find(x => x.id === (id || '')); return c || { id: '', name: 'Main', model: '' }; };
+  const tierOf = (id) => { const c = choiceOf(id); const main = choiceOf(''); return { id: c.id, name: c.name, model: c.model || main.model, inherited: !!c.id && !c.model }; };
   const toast = (t) => { const d = document.createElement('div'); d.className = 'toast'; d.textContent = t; document.body.appendChild(d); setTimeout(() => d.remove(), 2400); };
 
   // ---------- theme ----------
@@ -81,16 +88,25 @@
 
   // ---------- sessions ----------
   async function loadSessions() {
-    sessions = await O.sessions();
+    sessions = (await O.sessions()).filter(x => !PROJECT || x.projectId === PROJECT);
     $('#sessList').innerHTML = sessions.map(s => `<button class="sess ${cur && s.id === cur.id ? 'on' : ''} ${s.busy ? 'busy' : ''}" data-id="${s.id}"><i class="dot"></i><span class="n">${esc(s.name)}</span><span class="s">${s.busy ? esc(s.step || 'Working') : esc(shortPath(s.folder))}</span></button>`).join('') || '<div class="pane-empty">No sessions yet.</div>';
     $('#sessList').querySelectorAll('.sess').forEach(b => b.onclick = () => open(b.dataset.id));
   }
   const shortPath = (p) => { const parts = String(p || '').split(/[\\/]/).filter(Boolean); return parts.length > 2 ? '…/' + parts.slice(-2).join('/') : p; };
 
   async function newSession() {
-    const folder = await O.pickFolder(); if (!folder) return;
-    const s = await O.create({ folder });
+    // In a project the session starts in the project's folder with the project's model; change either from the chips.
+    const folder = project ? project.folder : await O.pickFolder(); if (!folder) return;
+    const s = await O.create(project ? { folder, projectId: project.id, name: `${project.name} · ${sessions.length + 1}`, tier: project.tier || '' } : { folder });
     await loadSessions(); open(s.id);
+  }
+  async function changeFolder() {
+    if (!cur) return newSession();
+    overlay(`<h2>Working folder</h2><p class="sub mono">${esc(cur.folder)}</p><button class="opt" data-a="open"><div><b>Open in Explorer</b><span>See the files</span></div></button><button class="opt" data-a="change"><div><b>Change folder</b><span>Point this session at another folder</span></div></button>`, (d) => d.querySelectorAll('.opt').forEach(b => b.onclick = async () => {
+      closeOverlay();
+      if (b.dataset.a === 'open') return O.openPath(cur.folder);
+      const f = await O.pickFolder(); if (!f) return; cur = await O.update(cur.id, { folder: f }); paintChips(); paintTitle(); toast('Folder changed');
+    }));
   }
   async function open(id) {
     cur = await O.session(id); if (!cur) return;
@@ -101,12 +117,12 @@
   }
   function paintTitle() { $('#tbSess').innerHTML = cur ? `<b>${esc(cur.name)}</b><span class="path">${esc(cur.folder)}</span>` : ''; }
   function paintChips() {
-    const m = modeOf(cur ? cur.mode : meta.settings.orbiterMode), t = tierOf(cur ? cur.tier : meta.settings.orbiterTier);
+    const m = modeOf(cur ? cur.mode : meta.settings.orbiterMode), t = tierOf(cur ? cur.tier : project ? project.tier : meta.settings.orbiterTier);
     const mc = $('#modeChip'); mc.style.setProperty('--mc', `var(--m-${m.id})`); mc.querySelector('span').textContent = m.name;
     $('#composer').className = 'composer m-' + m.id;
-    const tm = (meta.settings.modelTiers || {})[t.id];
-    $('#tierChip span').textContent = `${t.name}${tm && tm.model ? ' · ' + tm.model : ''}`;
-    $('#folderChip span').textContent = cur ? shortPath(cur.folder) : 'Pick a folder';
+    $('#tierChip span').textContent = `${t.name}${t.model ? ' · ' + t.model : ''}`;
+    $('#tierChip').title = t.inherited ? `${t.name} has no model of its own yet, so it uses the main model. Set it in Settings → Brain.` : 'Model (applies at once, even mid-task)';
+    $('#folderChip span').textContent = cur ? shortPath(cur.folder) : project ? `${project.name} files` : 'Pick a folder';
     const tok = cur ? cur.tokens || 0 : 0; $('#ctxMeter').textContent = tok ? `${tok >= 1000 ? (tok / 1000).toFixed(1) + 'k' : tok} tok` : '';
     const busy = cur && sessions.find(s => s.id === cur.id && s.busy);
     $('#sendBtn').classList.toggle('stop', !!busy);
@@ -115,9 +131,9 @@
 
   // ---------- transcript ----------
   function emptyState() {
-    feed.innerHTML = `<div class="empty"><div class="logo"><img src="mark.png" alt="" /></div><h1>What are we building${cur ? ' in ' + esc(cur.name) : ''}?</h1><p>${cur ? 'Orbiter reads the code, plans, edits and runs your tests. You approve what matters.' : 'Open a folder to start a coding session.'}</p>
-      <div class="starts">${cur ? [['Explain this codebase', 'Walk me through how this project is structured and where the main logic lives.'], ['Write ORBITER.md', '/init'], ['Find and fix a bug', 'Run the tests, find what fails, and fix it.'], ['Plan a feature', '/plan']].map(([b, p]) => `<button data-p="${esc(p)}"><b>${b}</b><span>${p.startsWith('/') ? p : esc(p.slice(0, 54)) + '…'}</span></button>`).join('') : `<button data-new="1"><b>Open folder</b><span>Start a new session</span></button>`}</div></div>`;
-    feed.querySelectorAll('.starts button').forEach(b => b.onclick = () => { if (b.dataset.new) return newSession(); input.value = b.dataset.p; submit(); });
+    feed.innerHTML = `<div class="empty"><div class="logo"><img src="mark.png" alt="" /></div><h1>What are we building${cur ? ' in ' + esc(cur.name) : ''}?</h1><p>${cur ? 'Orbiter reads the code, plans, edits and runs your tests. You approve what matters.' : project ? `Type below to start coding in ${esc(project.name)}'s folder, or open another folder.` : 'Open a folder to start a coding session.'}</p>
+      <div class="starts">${cur ? [['Explain this codebase', 'Walk me through how this project is structured and where the main logic lives.'], ['Write ORBITER.md', '/init'], ['Find and fix a bug', 'Run the tests, find what fails, and fix it.'], ['Plan a feature', '/plan']].map(([b, p]) => `<button data-p="${esc(p)}"><b>${b}</b><span>${p.startsWith('/') ? p : esc(p.slice(0, 54)) + '…'}</span></button>`).join('') : (project ? `<button data-new="1"><b>Start in ${esc(project.name)}</b><span>Uses this project's folder and model</span></button><button data-pick="1"><b>Open another folder</b><span>Code somewhere else for this project</span></button>` : `<button data-new="1"><b>Open folder</b><span>Start a new session</span></button>`)}</div></div>`;
+    feed.querySelectorAll('.starts button').forEach(b => b.onclick = async () => { if (b.dataset.pick) { const f = await O.pickFolder(); if (!f) return; const s2 = await O.create({ folder: f, projectId: project.id, name: `${project.name} · ${sessions.length + 1}`, tier: project.tier || '' }); await loadSessions(); return open(s2.id); } if (b.dataset.new) return newSession(); input.value = b.dataset.p; submit(); });
   }
   function renderThread(thread, diffs = []) {
     feed.innerHTML = '';
@@ -235,15 +251,21 @@
   }
   async function setMode(id) { if (!cur) { meta.settings.orbiterMode = id; await O.saveSettings({ orbiterMode: id }); } else cur = await O.update(cur.id, { mode: id }); paintChips(); }
   function tierPicker() {
-    overlay(`<h2>Model</h2><p class="sub">Orbit's own line. Map each tier to any provider's model in Orbit Settings → Models.</p>${meta.tiers.map(t => { const m = (meta.settings.modelTiers || {})[t.id]; return `<button class="opt ${(cur ? cur.tier : meta.settings.orbiterTier) === t.id ? 'on' : ''}" data-id="${t.id}"><div><b>${t.name}</b><span>${t.blurb}</span></div><span class="k">${m && m.model ? esc(m.model) : 'main model'}</span></button>`; }).join('')}`, (d) => d.querySelectorAll('.opt').forEach(b => b.onclick = async () => { if (cur) cur = await O.update(cur.id, { tier: b.dataset.id }); else { meta.settings.orbiterTier = b.dataset.id; await O.saveSettings({ orbiterTier: b.dataset.id }); } paintChips(); closeOverlay(); }));
+    const now = cur ? (cur.tier || '') : (meta.settings.orbiterTier || '');
+    const blurb = { '': 'Your main model from Settings → Brain.', spark: 'Fast and cheap. Quick edits, questions, small fixes.', pulse: 'Balanced. Everyday coding.', surge: 'Strongest. Hard bugs, big refactors, planning.' };
+    overlay(`<h2>Model</h2><p class="sub">Switching takes over at once, even in the middle of a task. Spark, Pulse and Surge are models on your Brain provider.</p>${(meta.choices || []).map(c => `<button class="opt ${now === c.id ? 'on' : ''}" data-id="${c.id}"><div><b>${esc(c.name)}</b><span>${blurb[c.id] || ''}</span></div><span class="k">${c.model ? esc(c.model) : 'not set · uses main'}</span></button>`).join('')}`, (d) => d.querySelectorAll('.opt').forEach(b => b.onclick = async () => {
+      const id = b.dataset.id;
+      if (cur) { await O.pickModel(cur.id, id); cur = await O.session(cur.id) || cur; } else { meta.settings.orbiterTier = id; await O.saveSettings({ orbiterTier: id }); }
+      paintChips(); closeOverlay(); toast(`Now using ${tierOf(id).name} · ${tierOf(id).model}`);
+    }));
   }
   function settingsDlg() {
     overlay(`<h2>Orbiter settings</h2><p class="sub">Defaults for new sessions. Models are mapped in Orbit Settings → Models.</p>
-      <div class="field"><label>Default model tier</label><div>${meta.tiers.map(t => `<button class="chip" data-tier="${t.id}" style="display:inline-flex;margin:0 6px 6px 0;${meta.settings.orbiterTier === t.id ? 'border-color:var(--accent);color:var(--text)' : ''}">${t.name}</button>`).join('')}</div></div>
+      <div class="field"><label>Default model for new sessions</label><div>${(meta.choices || []).map(t => `<button class="chip" data-tier="${t.id}" style="display:inline-flex;margin:0 6px 6px 0;${(meta.settings.orbiterTier || '') === t.id ? 'border-color:var(--accent);color:var(--text)' : ''}">${t.name}</button>`).join('')}</div></div>
       <div class="field"><label>Default permission mode</label><div>${meta.modes.map(m => `<button class="chip" data-mode="${m.id}" style="display:inline-flex;margin:0 6px 6px 0;${meta.settings.orbiterMode === m.id ? 'border-color:var(--accent);color:var(--text)' : ''}">${m.name}</button>`).join('')}</div></div>
       <div class="field"><label>Commands that never ask (one prefix per line, e.g. npm test)</label><textarea id="allow">${esc((meta.settings.orbiterAllow || []).join('\n'))}</textarea></div>
       <div class="foot"><button class="btn" id="sClose">Cancel</button><button class="btn pri" id="sSave">Save</button></div>`, (d) => {
-      let tier = meta.settings.orbiterTier, mode = meta.settings.orbiterMode;
+      let tier = meta.settings.orbiterTier || '', mode = meta.settings.orbiterMode;
       d.querySelectorAll('[data-tier]').forEach(b => b.onclick = () => { tier = b.dataset.tier; d.querySelectorAll('[data-tier]').forEach(x => x.style.borderColor = x === b ? 'var(--accent)' : ''); });
       d.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { mode = b.dataset.mode; d.querySelectorAll('[data-mode]').forEach(x => x.style.borderColor = x === b ? 'var(--accent)' : ''); });
       $('#sClose', d).onclick = closeOverlay;
@@ -289,7 +311,7 @@
     const text = input.value.trim(); if (!text) return;
     if (input.dataset.answer) { O.answerQuestion(input.dataset.answer, text); delete input.dataset.answer; input.placeholder = 'Ask Orbiter to build, fix or explain…  ( / for commands, @ for files )'; input.value = ''; return; }
     $('#slash').hidden = true;
-    if (!cur) { const folder = await O.pickFolder(); if (!folder) return; cur = await O.create({ folder }); await loadSessions(); paintChips(); paintTitle(); }
+    if (!cur) { const folder = project ? project.folder : await O.pickFolder(); if (!folder) return; cur = await O.create(project ? { folder, projectId: project.id, name: `${project.name} · 1`, tier: project.tier || '' } : { folder }); await loadSessions(); paintChips(); paintTitle(); }
     if (!raw && text.startsWith('/')) { const [cmd, ...rest] = text.split(' '); input.value = ''; autoGrow(); return runSlash(cmd.toLowerCase(), rest.join(' ').trim()); }
     input.value = ''; autoGrow();
     addUser(text); scroll(true);
@@ -300,6 +322,7 @@
   // ---------- live events ----------
   function onEvent(e) {
     if (e.type === 'open_session') return open(e.session);
+    if (e.type === 'models_changed') { O.meta().then(m => { meta = m; if (cur) O.session(cur.id).then(x => { if (x) cur = x; paintChips(); }); else paintChips(); }); return; }
     if (e.type === 'orbiter_sessions' || e.type === 'orbiter_busy') { loadSessions().then(async () => { if (cur) { cur = await O.session(cur.id) || cur; paintChips(); renderPane(); } }); }
     if (!cur || e.session !== cur.id) return;
     switch (e.type) {
@@ -313,7 +336,8 @@
       case 'approval': case 'question': addAsk(e); break;
       case 'approval_done': case 'question_done': { const d = feed.querySelector(`.ask[data-ask="${e.id}"]`); if (d) { d.classList.add('done'); d.querySelector('.res').textContent = e.type === 'question_done' ? `Answered: ${e.answer}` : e.approved ? 'Allowed' : 'Denied'; } break; }
       case 'orbiter_rewound': renderPane(); break;
-      case 'model_switch': el('tool', `<div class="row"><span class="ic"><svg viewBox="0 0 16 16"><path d="M3 6h9l-2.5-2.5M13 10H4l2.5 2.5"/></svg></span><span class="lbl">Switched to <b>${esc(e.model)}</b> (${esc(e.from)} unavailable)</span></div>`); break;
+      case 'stream_reset': { const d = feed.querySelector(`.a[data-id="${e.id}"]`); if (d) d.remove(); delete streaming[e.id]; break; }
+      case 'model_switch': el('tool', `<div class="row"><span class="ic"><svg viewBox="0 0 16 16"><path d="M3 6h9l-2.5-2.5M13 10H4l2.5 2.5"/></svg></span><span class="lbl">${e.reason === 'picked' ? `Now on <b>${esc(e.model)}</b>, picking up where ${esc(e.from)} left off` : `Switched to <b>${esc(e.model)}</b> (${esc(e.from)} unavailable)`}</span></div>`); scroll(); break;
       case 'error': el('a', `<div class="md err">${esc(e.text || e.message)}</div>`); scroll(); break;
     }
   }
@@ -343,18 +367,21 @@
   $('#newBtn').onclick = newSession;
   $('#modeChip').onclick = modePicker;
   $('#tierChip').onclick = tierPicker;
-  $('#folderChip').onclick = () => (cur ? O.openPath(cur.folder) : newSession());
+  $('#folderChip').onclick = changeFolder;
+  $('#paneBtn').onclick = () => { document.body.classList.toggle('pane-off'); try { localStorage.setItem('orbiterPaneOff', document.body.classList.contains('pane-off') ? '1' : ''); } catch {} };
+  try { if (localStorage.getItem('orbiterPaneOff')) document.body.classList.add('pane-off'); } catch {}
+  window.addEventListener('message', (m) => { const d = m.data || {}; if (d.type === 'open_session' && d.session) open(d.session); else if (d.type === 'focus') input.focus(); });
   $('#themeBtn').onclick = themePicker;
   $('#setBtn').onclick = settingsDlg;
   document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => { tab = b.dataset.t; renderPane(); });
-  document.querySelectorAll('[data-w]').forEach(b => b.onclick = () => O.win(b.dataset.w));
   O.on(onEvent);
 
   (async () => {
     meta = await O.meta();
+    if (PROJECT) project = await O.project(PROJECT);
     applyTheme(meta.settings.orbiterTheme || 'orbit-dark');
     await loadSessions();
-    const want = new URLSearchParams(location.search).get('session');
+    const want = QS.get('session');
     if (want) await open(want); else if (sessions[0]) await open(sessions[0].id); else { paintChips(); emptyState(); renderPane(); }
     window.__orbiterReady = true;
   })();

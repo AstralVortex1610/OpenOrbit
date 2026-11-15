@@ -57,7 +57,7 @@
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12 18 6"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg>
         <span>Osint</span>
       </button>
-      <button class="rail-btn rail-orbiter" id="orbiterBtn" title="Orbiter (coding agent)">
+      <button class="rail-btn rail-orbiter" id="orbiterBtn" data-view="orbiter" title="Orbiter (coding agent)">
         <svg viewBox="0 0 24 24"><path d="m8 8-4 4 4 4M16 8l4 4-4 4"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/></svg>
         <span>Orbiter</span><i class="count" id="orbBadge"></i>
       </button>
@@ -134,7 +134,7 @@
           <button class="scope-back" id="scopeBack" title="All projects"><svg viewBox="0 0 24 24"><path d="M14.5 6 8.5 12l6 6"/></svg></button>
           <span class="proj-mono" id="scopeMono"></span>
           <div class="scope-title"><b id="scopeName"></b><span id="scopeAbout"></span></div>
-          <select class="tier-pick" id="projTier" title="Model for this project"><option value="">Default model</option><option value="spark">Spark</option><option value="pulse">Pulse</option><option value="surge">Surge</option></select>
+          <div class="seg" id="projSeg"><button data-m="chat" class="on">Chat</button><button data-m="orbiter">Orbiter</button></div>
           <button class="ghost sm" id="drawerBtn"><svg viewBox="0 0 24 24"><path d="M5 4.5h14v15H5zM14.5 4.5v15"/></svg>Brief &amp; files</button>
         </div>
         <aside class="drawer" id="drawer">
@@ -145,6 +145,7 @@
           <div class="file-list" id="fileList"></div>
           <div class="drawer-foot"><button class="ghost sm" id="clearProjChat">Clear chat</button><button class="ghost sm danger" id="deleteProj">Delete project</button></div>
         </aside>
+        <iframe class="orb-frame proj-orb" id="projOrbiter" title="Orbiter for this project"></iframe>
         <div class="scroller" id="scroller">
           <div class="welcome" id="welcome">
             <div class="orbit-hero" aria-hidden="true">
@@ -174,6 +175,7 @@
             </button>
             <input type="file" id="fileInput" accept="image/*" multiple hidden />
             <textarea id="input" rows="1" placeholder="Message Orbit…" autocomplete="off"></textarea>
+            <button type="button" class="model-chip" id="modelChip" title="Model (switching takes over at once, even mid-task)"><svg viewBox="0 0 16 16"><path d="M9 1.5 3.5 9H8l-1 5.5L12.5 7H8z"/></svg><span>Main</span></button>
             <button type="button" class="icon-btn live-btn" id="liveBtn" title="Live voice: talk with Orbit">
               <svg viewBox="0 0 24 24"><path d="M3 12h2M7 8.5v7M11 5v14M15 8.5v7M19 10.5v3M21 12h0"/></svg>
             </button>
@@ -191,6 +193,10 @@
       </section>
 
       <!-- TASKS -->
+      <section class="view view-orbiter" id="view-orbiter">
+        <iframe class="orb-frame" id="orbiterFrame" title="Orbiter"></iframe>
+      </section>
+
       <section class="view" id="view-tasks">
         <div class="page">
           <div class="page-head">
@@ -386,13 +392,13 @@
               <div id="backupList"></div>
               <button class="ghost sm" id="addBackup" type="button">+ Add a backup model</button>
             </div>
-            <div class="backups tiers">
-              <b>Orbit models</b> <small class="muted">Orbit's own line. Each tier is a name you map to any provider's model; leave base URL and key empty to use the ones above. Orbiter, chat and each project can pick a tier.</small>
-              <div class="tier-row"><span class="tn">Spark<i>fast, cheap</i></span><input id="t-spark-model" list="modelList" placeholder="e.g. a Flash model" /><input id="t-spark-baseUrl" placeholder="Base URL (optional)" /><input id="t-spark-apiKey" type="password" placeholder="API key (optional)" autocomplete="off" /></div>
-              <div class="tier-row"><span class="tn">Pulse<i>balanced</i></span><input id="t-pulse-model" list="modelList" placeholder="e.g. gemini-4-hydrogen" /><input id="t-pulse-baseUrl" placeholder="Base URL (optional)" /><input id="t-pulse-apiKey" type="password" placeholder="API key (optional)" autocomplete="off" /></div>
-              <div class="tier-row"><span class="tn">Surge<i>strongest</i></span><input id="t-surge-model" list="modelList" placeholder="e.g. a Pro model" /><input id="t-surge-baseUrl" placeholder="Base URL (optional)" /><input id="t-surge-apiKey" type="password" placeholder="API key (optional)" autocomplete="off" /></div>
-              <label class="inline">Chat uses <select id="s-chatTier"><option value="">Main model</option><option value="spark">Spark</option><option value="pulse">Pulse</option><option value="surge">Surge</option></select></label>
-              <label class="inline">Orbiter uses <select id="s-orbiterTier"><option value="spark">Spark</option><option value="pulse">Pulse</option><option value="surge">Surge</option></select></label>
+            <div class="tiers-compact">
+              <b>Spark, Pulse, Surge</b> <small class="muted">Optional quick picks on the same provider and key as above. Leave one empty and it uses the main model. Pick between them from the model button in chat, projects and Orbiter.</small>
+              <div class="tier-line">
+                <label><span>Spark <i>fast</i></span><input id="t-spark-model" list="modelList" placeholder="Main model" /></label>
+                <label><span>Pulse <i>balanced</i></span><input id="t-pulse-model" list="modelList" placeholder="Main model" /></label>
+                <label><span>Surge <i>strongest</i></span><input id="t-surge-model" list="modelList" placeholder="Main model" /></label>
+              </div>
             </div>
             <div class="row">
               <button class="ghost" id="testBtn">Test connection</button>
@@ -610,7 +616,7 @@
           <div class="card">
             <h3>Updates</h3>
             <p class="muted">Orbit updates itself from GitHub. Your settings, chats, memory, projects and tasks stay exactly as they are.</p>
-            <label class="toggle"><input type="checkbox" id="s-autoUpdate" /><span></span>Check for updates automatically</label>
+            <label class="toggle"><input type="checkbox" id="s-autoUpdate" /><span></span>Update automatically (downloads in the background, installs when Orbit is idle)</label>
             <div class="row"><button class="ghost" id="checkUpdate" type="button">Check for updates</button><button class="primary" id="installUpdate" type="button" style="display:none">Update now</button><span id="updateState" class="muted"></span></div>
           </div>
 

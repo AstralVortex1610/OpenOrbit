@@ -249,8 +249,14 @@ class Agent {
     }
 
     const chatTier = !proactiveTask && s.chatTier ? this.tierSettings(s.chatTier) : null;
+    const pickMain = () => {
+      const now = this.store.getSettings();
+      if (proactiveTask) return { settings: now, model: now.fastModel || now.model };
+      const t = now.chatTier ? this.tierSettings(now.chatTier) : null;
+      return t ? { settings: t.settings, model: t.model } : { settings: now, model: now.model };
+    };
     const res = await this._loop({
-      lane: 'main', emit, settings: chatTier ? chatTier.settings : undefined,
+      lane: 'main', emit, settings: chatTier ? chatTier.settings : undefined, pick: pickMain,
       system: () => this._systemPrompt(proactiveTask ? 'proactive' : 'main'),
       context: () => this._contextMessages(this.store.getThread(), 50),
       append: (m) => this._append(m),
@@ -425,16 +431,38 @@ ${this._recentTranscript(14) || '(none)'}
   }
 
   // ---------------- the loop every lane runs ----------------
-  async _loop({ lane, emit, system, context, append, tools, schemas, model, maxSteps, streamToUI, proactive, onStep, onSafePoint, settings }) {
-    const s = settings || this.store.getSettings();
+  async _loop({ lane, emit, system, context, append, tools, schemas, model, maxSteps, streamToUI, proactive, onStep, onSafePoint, settings, pick }) {
+    const s0 = settings || this.store.getSettings();
+    // pick() is read before every step, so a model the user picks mid-task takes over at once.
+    const choose = () => { try { const p = pick && pick(); if (p && p.settings) return p; } catch {} return { settings: s0, model }; };
     const ctl = new AbortController();
     this.ctls.set(lane, ctl);
+    const steps = this.stepCtls || (this.stepCtls = new Map());
+    let retries = 0;
+    try {
     for (let step = 0; step < maxSteps; step++) {
+      const { settings: s, model: m } = choose();
       const usage = this.store.getUsage();
       if (s.dailyTokenCap && usage.tokensToday >= s.dailyTokenCap) throw new Error(`Daily token cap reached (${usage.tokensToday.toLocaleString()}). Raise it in Settings to keep going.`);
       const msgId = uid();
       const messages = [{ role: 'system', content: system() }, ...context()];
-      const res = await this._completeChain(s, model, messages, msgId, streamToUI, ctl, schemas, emit);
+      const stepCtl = new AbortController();
+      const relay = () => stepCtl.abort();
+      ctl.signal.addEventListener('abort', relay);
+      const entry = { ctl: stepCtl, key: Agent._modelKey(s, m), pick: choose, retarget: false };
+      steps.set(lane, entry);
+      let res;
+      try { res = await this._completeChain(s, m, messages, msgId, streamToUI, stepCtl, schemas, emit); }
+      catch (e) {
+        if (entry.retarget && !ctl.signal.aborted && retries < 5) {
+          retries++;
+          const next = choose();
+          emit({ type: 'stream_reset', id: msgId });
+          emit({ type: 'model_switch', model: next.model, from: m, reason: 'picked' });
+          step--; continue;
+        }
+        throw e;
+      } finally { ctl.signal.removeEventListener('abort', relay); if (steps.get(lane) === entry) steps.delete(lane); }
       this.store.addUsage(res.tokens);
       if (!res.toolCalls.length) return { text: (res.content || '').trim(), msgId };
 
@@ -474,6 +502,28 @@ ${this._recentTranscript(14) || '(none)'}
       if (onSafePoint) onSafePoint();
     }
     return { limit: maxSteps, text: '' };
+    } finally { steps.delete(lane); }
+  }
+  static _modelKey(s, m) { return String((s && s.baseUrl) || '') + '|' + String(m || (s && s.model) || ''); }
+  // The user picked another model while a lane is mid-request: drop that request and redo the step
+  // on the new model. lanes: a lane id, a prefix ending in '*', or nothing for every lane.
+  retarget(lanes) {
+    this._cool && this._cool.clear(); // a model the user just chose is never skipped for an old error
+    const match = (l) => !lanes || (String(lanes).endsWith('*') ? l.startsWith(String(lanes).slice(0, -1)) : l === lanes);
+    let n = 0;
+    for (const [lane, e] of (this.stepCtls || new Map())) {
+      if (!match(lane)) continue;
+      const next = e.pick(); const key = Agent._modelKey(next.settings, next.model);
+      if (key === e.key) continue;
+      e.retarget = true; e.ctl.abort(); n++;
+    }
+    return n;
+  }
+  // What each picker shows: the main model plus Spark, Pulse and Surge on the same provider.
+  modelChoices() {
+    const s = this.store.getSettings();
+    const t = s.modelTiers || {};
+    return [{ id: '', name: 'Main', model: s.model || '' }, ...['spark', 'pulse', 'surge'].map(id => ({ id, name: { spark: 'Spark', pulse: 'Pulse', surge: 'Surge' }[id], model: (t[id] && t[id].model) || '', set: !!(t[id] && t[id].model) }))];
   }
 
   _systemPrompt(mode = 'main') {
@@ -703,7 +753,7 @@ ${files}`;
     const s = this.store.getSettings();
     const t = tierId && (s.modelTiers || {})[tierId];
     const name = { spark: 'Spark', pulse: 'Pulse', surge: 'Surge' }[tierId] || '';
-    if (!t || !t.model) return { settings: s, model: s.model, label: name ? `${name} (main model)` : s.model };
+    if (!t || !t.model || t.model === s.model && !t.baseUrl) return { settings: s, model: s.model, label: name ? `${name} · ${s.model}` : s.model };
     const settings = { ...s, model: t.model, baseUrl: t.baseUrl || s.baseUrl, apiKey: t.apiKey || s.apiKey,
       backupModels: [{ id: 'main', model: s.model, baseUrl: s.baseUrl, apiKey: s.apiKey }, ...(s.backupModels || [])] };
     return { settings, model: t.model, label: `${name} · ${t.model}` };
@@ -747,7 +797,16 @@ ${files}`;
     for (const b of s.backupModels || []) add(b.model, b.baseUrl, b.apiKey);
     return list;
   }
+  // "fetch failed" on its own says nothing. Name the model, the host and the real cause.
+  static _netError(e, s) {
+    let host = String(s.baseUrl || ''); try { host = new URL(s.baseUrl).host; } catch {}
+    const c = e && e.cause; const code = (c && (c.code || c.message)) || e.message || 'network error';
+    const why = /ENOTFOUND|EAI_AGAIN/.test(code) ? "the address doesn't resolve (check the base URL, or your internet)" : /ECONNREFUSED/.test(code) ? 'the server refused the connection' : /ETIMEDOUT|UND_ERR_CONNECT_TIMEOUT|timeout/i.test(code) ? 'the connection timed out' : /CERT|SSL|TLS/i.test(code) ? 'a secure-connection (certificate) problem' : !host ? 'no base URL is set in Settings → Brain' : code;
+    const err = new Error(`Couldn't reach ${host || 'the model provider'} for ${s.model || 'the model'}: ${why}.`);
+    err.network = true; err.cause = c; return err;
+  }
   static _switchable(err) {
+    if (err.network) return true;
     if (err.name === 'AbortError') return false;
     const m = String(err.message || '');
     if (err.status) return [401, 402, 403, 404, 408, 409, 413, 429].includes(err.status) || err.status >= 500 || /quota|rate.?limit|limit|exceed|insufficient|credit|billing|overload|capacity|unavailable|not found|does not exist/i.test(m);
@@ -787,7 +846,9 @@ ${files}`;
     for (let i = 0; i < order.length; i++) {
       const c = order[i];
       try {
-        const res = await this._complete(c.s, messages, msgId, streamToUI, true, ctl, schemas, emit);
+        let res;
+        try { res = await this._complete(c.s, messages, msgId, streamToUI, true, ctl, schemas, emit); }
+        catch (e) { if (!e.network || ctl.signal.aborted) throw e; await new Promise(r => setTimeout(r, 1200)); res = await this._complete(c.s, messages, msgId, streamToUI, true, ctl, schemas, emit); }
         const switched = c.key !== all[0].key ? c.key : null;
         if (switched && this._lastSwitch !== switched) (emit || this.emit)({ type: 'model_switch', model: c.s.model, from: all[0].s.model });
         this._lastSwitch = switched;
@@ -808,7 +869,9 @@ ${files}`;
     const tools = schemas || TOOL_SCHEMAS;
     const body = { model: s.model, messages, tools: google ? Agent._geminiTools(tools) : tools, tool_choice: 'auto', stream: true };
     if (withUsage) body.stream_options = { include_usage: true };
-    const r = await fetch(this._url(s, '/chat/completions'), { method: 'POST', headers: this._headers(s), body: JSON.stringify(body), signal: ctl.signal });
+    let r;
+    try { r = await fetch(this._url(s, '/chat/completions'), { method: 'POST', headers: this._headers(s), body: JSON.stringify(body), signal: ctl.signal }); }
+    catch (e) { if (e.name === 'AbortError' || ctl.signal.aborted) throw e; throw Agent._netError(e, s); }
     if (!r.ok) {
       const errText = await r.text();
       if (withUsage && r.status === 400 && /stream_options|include_usage/i.test(errText)) return this._complete(s, messages, msgId, streamToUI, false, ctl, schemas, emit);

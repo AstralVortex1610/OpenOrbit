@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('orbit', {
   getSettings: () => ipcRenderer.invoke('settings:get'),
   openOrbiter: (id) => ipcRenderer.invoke('orbiter:open', id),
+  models: { choices: () => ipcRenderer.invoke('models:choices'), pick: (scope, tier) => ipcRenderer.invoke('models:pick', scope, tier) },
   saveSettings: (s) => ipcRenderer.invoke('settings:save', s),
   testConnection: () => ipcRenderer.invoke('settings:test'),
   listModels: () => ipcRenderer.invoke('settings:models'),
@@ -88,8 +89,24 @@ contextBridge.exposeInMainWorld('orbit', {
     close: () => ipcRenderer.invoke('win:close'),
   },
   on: (channel, fn) => {
-    const ok = ['agent:event', 'tasks:changed', 'ui:focusInput', 'settings:changed', 'live:event', 'voice:progress', 'update:state', 'connectors:changed'];
+    const ok = ['ui:orbiter', 'agent:event', 'tasks:changed', 'ui:focusInput', 'settings:changed', 'live:event', 'voice:progress', 'update:state', 'connectors:changed'];
     if (!ok.includes(channel)) return;
     ipcRenderer.on(channel, (_e, payload) => fn(payload));
   },
 });
+
+// The Orbiter frame inside the main window gets its own bridge.
+if (/orbiter\.html$/.test(location.pathname)) {
+  const inv = (c) => (...a) => ipcRenderer.invoke(c, ...a);
+  contextBridge.exposeInMainWorld('orbiter', {
+    meta: inv('orbiter:meta'), sessions: inv('orbiter:sessions'), session: inv('orbiter:session'), create: inv('orbiter:create'),
+    update: inv('orbiter:update'), remove: inv('orbiter:delete'), thread: inv('orbiter:thread'), send: inv('orbiter:send'), stop: inv('orbiter:stop'),
+    checkpoints: inv('orbiter:checkpoints'), rewind: inv('orbiter:rewind'), compact: inv('orbiter:compact'), init: inv('orbiter:init'), memory: inv('orbiter:memory'),
+    pickFolder: inv('orbiter:pickFolder'), openPath: inv('orbiter:openPath'), saveSettings: inv('orbiter:saveSettings'), saveTheme: inv('orbiter:saveTheme'), usage: inv('orbiter:usage'),
+    win: inv('orbiter:win'), diffs: inv('orbiter:diffs'), clear: inv('orbiter:clear'), project: inv('orbiter:project'),
+    pickModel: (sessionId, tier) => ipcRenderer.invoke('models:pick', 'orb:' + sessionId, tier),
+    answerApproval: (id, ok) => ipcRenderer.invoke('approval:answer', id, ok),
+    answerQuestion: (id, a) => ipcRenderer.invoke('question:answer', id, a),
+    on: (cb) => { ipcRenderer.on('orbiter:event', (_e, d) => cb(d)); ipcRenderer.on('orbiter:open', (_e, id) => cb({ type: 'open_session', session: id })); },
+  });
+}

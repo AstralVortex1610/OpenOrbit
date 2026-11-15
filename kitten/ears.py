@@ -15,6 +15,8 @@ COMMANDS = {
     "scold": ["bad cat", "bad kitty", "no kitty", "stop it kitty"],
     "dance": ["kitty dance", "dance kitty", "party time"],
     "flip": ["do a flip", "backflip", "kitty jump", "kitty flip"],
+    "mute": ["quiet kitty", "kitty quiet", "shush kitty", "kitty mute"],
+    "unmute": ["kitty sounds on", "kitty unmute", "make some noise kitty"],
 }
 PHRASES = sorted({p for v in COMMANDS.values() for p in v})
 

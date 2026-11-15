@@ -23,6 +23,8 @@ DEFAULTS = {
     "size": 1.0,
     "voice": True,
     "loud_noise_reacts": True,
+    "sound_volume": 0.35,
+    "sound_muted": False,
     "doomscroll_title_keywords": [
         "instagram", "tiktok", "reels", "#shorts", "- youtube shorts", "reddit", "facebook",
         "snapchat", "9gag", "/ x", "on x:", "twitter", "threads", "moj", "josh"
@@ -61,6 +63,15 @@ def load_config():
     except Exception:
         pass
     return cfg
+
+
+def save_config(cfg):
+    try:
+        os.makedirs(APP_DIR, exist_ok=True)
+        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2)
+    except Exception:
+        pass
 
 
 _proc_cache = {}

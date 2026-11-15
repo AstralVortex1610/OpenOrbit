@@ -20,7 +20,7 @@ jobs:
           Expand-Archive m.zip -DestinationPath tmpm
           Move-Item tmpm/vosk-model-small-en-us-0.15 assets/vosk-model
       - name: Import check
-        run: python -c "import sys; sys.argv=['x']; import kitten.pet, kitten.ears, kitten.brain, kitten.win32; print('ok')"
+        run: python -c "import sys; sys.argv=['x']; import kitten.pet, kitten.ears, kitten.brain, kitten.win32, kitten.rig, kitten.motion, kitten.world, kitten.sfx, kitten.draw; print('ok')"
       - name: Build exe
         run: >
           pyinstaller --onefile --noconsole --name KittenWatcher --icon assets/icon.ico

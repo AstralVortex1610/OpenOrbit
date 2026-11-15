@@ -37,6 +37,12 @@ if IS_WIN:
     user32.FindWindowW.restype = HWND
     user32.EnumWindows.argtypes = [ctypes.WINFUNCTYPE(wintypes.BOOL, HWND, wintypes.LPARAM), wintypes.LPARAM]
     dwmapi.DwmGetWindowAttribute.argtypes = [HWND, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD]
+    try:
+        _GetWindowLong = user32.GetWindowLongPtrW
+    except AttributeError:
+        _GetWindowLong = user32.GetWindowLongW
+    _GetWindowLong.argtypes = [HWND, ctypes.c_int]
+    _GetWindowLong.restype = ctypes.c_ssize_t
 
     class LASTINPUTINFO(ctypes.Structure):
         _fields_ = [("cbSize", wintypes.UINT), ("dwTime", wintypes.DWORD)]
@@ -310,3 +316,55 @@ def remove_autostart(name="KittenWatcher"):
 def appdata(*parts):
     base = os.environ.get("APPDATA") or os.path.expanduser("~/.config")
     return os.path.join(base, *parts)
+
+
+_SKIP_CLASSES = {"Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd", "Windows.UI.Core.CoreWindow"}
+
+
+def is_cloaked(hwnd):
+    if not IS_WIN or not hwnd:
+        return False
+    v = ctypes.c_int(0)
+    try:
+        dwmapi.DwmGetWindowAttribute(hwnd, 14, ctypes.byref(v), ctypes.sizeof(v))  # DWMWA_CLOAKED
+    except Exception:
+        return False
+    return v.value != 0
+
+
+def top_windows(my_pid=0):
+    """Visible, real app windows in z-order (front first): [(hwnd, (x, y, w, h)), ...].
+    Skips minimized, cloaked (other virtual desktops / suspended UWP), tool windows, the desktop,
+    the taskbar and our own windows."""
+    if not IS_WIN:
+        return []
+    out = []
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, HWND, wintypes.LPARAM)
+    def cb(h, _):
+        try:
+            if not user32.IsWindowVisible(h) or user32.IsIconic(h):
+                return True
+            ex = _GetWindowLong(h, -20)  # GWL_EXSTYLE
+            if (ex & 0x80) and not (ex & 0x40000):  # WS_EX_TOOLWINDOW without WS_EX_APPWINDOW
+                return True
+            if ex & 0x20 and ex & 0x80000:  # click-through layered overlays
+                return True
+            if class_name(h) in _SKIP_CLASSES or not title(h):
+                return True
+            if my_pid and pid_of(h) == my_pid:
+                return True
+            if is_cloaked(h):
+                return True
+            r = rect(h)
+            if r and r[2] >= 150 and r[3] >= 80:
+                out.append((h, r))
+        except Exception:
+            pass
+        return True
+
+    try:
+        user32.EnumWindows(cb, 0)
+    except Exception:
+        return []
+    return out

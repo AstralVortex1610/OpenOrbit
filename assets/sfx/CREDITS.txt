@@ -1,0 +1,19 @@
+Kitten Watcher sound effects - sources and licences
+(all trimmed, filtered, pitched and normalized for small quiet playback; see work/build_sfx.py)
+
+meow_0.wav    "Meow of a Siamese cat - freemaster2.wav" - Wikimedia Commons, CC0 1.0
+              https://commons.wikimedia.org/wiki/File:Meow_of_a_Siamese_cat_-_freemaster2.wav
+meow_1.wav    "Maullido de gata hembra joven.ogg" by George Miquilena - Wikimedia Commons, CC0 1.0
+              https://commons.wikimedia.org/wiki/File:Maullido_de_gata_hembra_joven.ogg
+meow_2.wav,   "Meow of a pleading cat.oga" - Wikimedia Commons, Public domain
+meow_3.wav    https://commons.wikimedia.org/wiki/File:Meow_of_a_pleading_cat.oga
+mew_short.wav "GettingOutImpatient.ogg" - Wikimedia Commons, Public domain
+              https://commons.wikimedia.org/wiki/File:GettingOutImpatient.ogg
+purr.wav      "Purr (10 sec loopable).ogg" by Insanejeff - Wikimedia Commons, Public domain
+              https://commons.wikimedia.org/wiki/File:Purr_(10_sec_loopable).ogg
+hiss.wav      "Cat hissing - Zabuhailo.wav" - Wikimedia Commons, CC0 1.0
+              https://commons.wikimedia.org/wiki/File:Cat_hissing_-_Zabuhailo.wav
+step_0-3.wav  Kenney "Impact Sounds" pack (footstep_carpet_000-003.ogg) - CC0 1.0, www.kenney.nl
+land_0-1.wav  Kenney "Impact Sounds" pack (impactSoft_heavy_000-001.ogg) - CC0 1.0
+jump.wav      Kenney "Impact Sounds" impactSoft_medium_001.ogg (CC0 1.0) mixed with a
+              numpy-synthesized noise whoosh (original, CC0)

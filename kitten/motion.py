@@ -90,9 +90,10 @@ class Actor:
             r.phase = (r.phase + abs(self.vy) * dt / 44.0) % 1.0
             self.y += self.vy * dt
         r.mode = {"ground": "ground", "air": "air", "climb": "climb", "hang": "hang",
-                  "held": "air"}.get(self.mode, "ground")
-        if self.mode != "hang":
+                  "held": "held"}.get(self.mode, "ground")
+        if self.mode not in ("hang", "held"):
             r.x, r.y = self.x, self.y
+        r.vx, r.vy = self.vx, self.vy
         r.update(dt, dx)
         for ev in r.events:
             if ev[0] == "step" and self.mode == "ground" and r.ground_speed > 20:
@@ -202,6 +203,11 @@ class Actor:
         self.ride_rect = self.world.rect_of(p.hwnd) if p.hwnd else None
         self.landed_flag = True
         self.snd("land", clamp(impact / 2500.0, 0.25, 1.0))
+        if impact > 900:  # little dust puffs either side of the paws
+            s = self.scale
+            for d in (-1, 1):
+                self.rig.emit("puff", self.x + d * 30 * s, self.y - 4 * s, d * 90, -30, 0.45,
+                              clamp(impact / 2600.0, 0.5, 1.1))
 
     # ------------------------------------------------------------------ helpers (generators)
     def wait(self, sec):
@@ -243,8 +249,8 @@ class Actor:
         if big:
             r.set(head_rot=-12 if dy < 0 else 12, look_down=0)
             yield from self.wait(0.35)  # look at it, decide
-        r.set(crouch=1.0, lean=-0.12 if dy < -40 else 0.05, tail_up=0.25)
-        yield from self.wait(0.16)
+        r.set(crouch=1.0, lean=-0.12 if dy < -40 else 0.05, tail_up=0.25, sq=-0.12, ears_down=0.3)
+        yield from self.wait(0.18)
         if big:
             for i in range(int(0.5 * self.fps)):  # butt wiggle
                 r.set(lean=-0.12 + 0.06 * math.sin(i * 0.9))
@@ -255,7 +261,7 @@ class Actor:
         t = math.sqrt(2 * h1 / G) + math.sqrt(2 * h2 / G)
         self.vx = dx / t
         self.vy = -math.sqrt(2 * G * h1)
-        r.set(crouch=0.0, lean=0.0, head_rot=0.0, tail_up=0.6)
+        r.set(crouch=0.0, lean=0.0, head_rot=0.0, tail_up=0.6, sq=0.0, ears_down=0.0)
         self.mode = "air"
         self.plat = None
         self.spin = spin
@@ -272,9 +278,9 @@ class Actor:
         """Vertical hop; flips>0 = forward somersaults, <0 = backflips (land on his feet)."""
         if self.mode != "ground":
             return
-        self.rig.set(crouch=0.8)
-        yield from self.wait(wind)
-        self.rig.set(crouch=0)
+        self.rig.set(crouch=0.8, sq=-0.1)
+        yield from self.wait(max(wind, 0.1))
+        self.rig.set(crouch=0, sq=0.0)
         self.vy = -math.sqrt(2 * G * height)
         self.vx = vx
         self.mode = "air"
@@ -457,7 +463,7 @@ def hang_pose(actor, gx, gy, t, swing=14.0):
     r.rot = -90.0 * r.facing + swing * math.sin(t * 2.2)
     pel, che, _, _ = r.skeleton()
     r.x, r.y = 0.0, 0.0
-    wx, wy = r.to_world(che[0] + 26, che[1] - 14)
+    wx, wy = r.to_world(*r.grip_local())
     r.x, r.y = gx - wx, gy - wy
     a.x, a.y = r.x, r.y
 
@@ -480,3 +486,36 @@ def let_go(actor):
     while a.mode == "air" and n < 4 * a.fps:
         n += 1
         yield
+
+
+def _neck(che):
+    return che[0] + 13, che[1] - 17
+
+
+def _scruff_off(rig):
+    """The scruff sits just behind / under the back of the big (upright) head, in world px."""
+    s = rig.scale * rig.zoom
+    return -rig.facing * 34 * s, -22 * s
+
+
+def scruff_world(rig):
+    pel, che, _, _ = rig.skeleton()
+    nx, ny = rig.to_world(*_neck(che))
+    ox, oy = _scruff_off(rig)
+    return nx + ox, ny + oy
+
+
+def held_pose(actor, sx, sy, rot, t):
+    """One frame of being held up by the scruff at world (sx, sy): body hangs below the grip."""
+    a, r = actor, actor.rig
+    a.mode = "held"
+    a.plat = None
+    r.mode = "held"
+    r.view = "side"
+    r.rot = rot
+    pel, che, _, _ = r.skeleton()
+    r.x, r.y = 0.0, 0.0
+    wx, wy = r.to_world(*_neck(che))
+    ox, oy = _scruff_off(r)
+    r.x, r.y = sx - ox - wx, sy - oy - wy
+    a.x, a.y = r.x, r.y

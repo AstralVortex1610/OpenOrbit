@@ -51,7 +51,18 @@ const agent = new Agent({
   store,
   emit: (evt) => {
     // Approvals and questions from an Orbiter session belong in the Orbiter window.
-    if (String(evt.lane || '').startsWith('orb-')) { sendOrb('orbiter:event', { ...evt, session: String(evt.lane).slice(4) }); if ((evt.type === 'approval' || evt.type === 'question') && !(win && win.isVisible() && win.isFocused())) notify('Orbiter needs you', evt.title || evt.question || ''); return; }
+    if (String(evt.lane || '').startsWith('orb-')) {
+      const session = String(evt.lane).slice(4);
+      sendOrb('orbiter:event', { ...evt, session });
+      if (evt.type === 'approval_done' || evt.type === 'question_done') send('agent:event', { type: 'orbiter_answered', session });
+      if (evt.type === 'approval' || evt.type === 'question') {
+        // Also tell the rest of the app, so a question is never stuck in an Orbiter view nobody is looking at.
+        const sess = orbiter && orbiter.session(session);
+        send('agent:event', { type: 'orbiter_needs_you', session, project: (sess && sess.projectId) || null, name: (sess && sess.name) || 'Orbiter', text: evt.question || evt.title || '' });
+        if (!(win && win.isVisible() && win.isFocused())) notify('Orbiter needs you', evt.title || evt.question || '');
+      }
+      return;
+    }
     send('agent:event', evt); if (live) live.onAgentEvent(evt);
   },
   // Orbit reaching out: a desktop notification when the window is not in front,
@@ -292,6 +303,7 @@ ipcMain.handle('settings:models', async () => { try { return { ok: true, models:
 ipcMain.handle('thread:get', () => store.getThread().filter(m => m.ui));
 ipcMain.handle('thread:clear', () => { store.clearThread(); return true; });
 ipcMain.handle('chat:send', async (_e, text, attachments) => { agent.handleUser(text, attachments || []); return true; });
+ipcMain.handle('chat:edit', async (_e, scope, id, text) => { try { await agent.editMessage(scope, id, String(text || '')); return { ok: true }; } catch (e) { return { ok: false, error: e.message }; } });
 ipcMain.handle('chat:stop', () => { agent.stop(); return true; });
 ipcMain.handle('lane:stop', (_e, id) => agent.stopLane(id));
 ipcMain.handle('google:connect', async () => {
@@ -325,6 +337,7 @@ ipcMain.handle('orbiter:create', (_e, d) => orbiter.createSession(d || {}));
 ipcMain.handle('orbiter:update', (_e, id, patch) => { const ok = {}; for (const k of ['name', 'tier', 'mode', 'folder']) if (patch && patch[k] !== undefined) ok[k] = patch[k]; const r = orbiter.updateSession(id, ok); if (ok.tier !== undefined) agent.retarget('orb-' + id); return r; });
 ipcMain.handle('orbiter:project', (_e, pid) => { const p = pid && hub.project(pid); return p ? { id: p.id, name: p.name, color: p.color, folder: p.folder || hub.filesDir(p.id), tier: p.tier || '' } : null; });
 ipcMain.handle('orbiter:delete', (_e, id) => { orbiter.deleteSession(id); return true; });
+ipcMain.handle('orbiter:pending', (_e, id) => agent.pendingAsks('orb-' + id).map(e => ({ ...e, session: id })));
 ipcMain.handle('orbiter:thread', (_e, id) => orbiter.thread(id).filter(m => m.ui || m.role === 'tool').map(m => ({ role: m.role, content: typeof m.content === 'string' ? m.content : '', display: m.display, at: m.at, id: m.id, checkpoint: m.checkpoint, name: m.name, compact: m.compact, tool_calls: m.tool_calls ? m.tool_calls.map(c => ({ id: c.id, name: c.function.name, args: c.function.arguments })) : undefined, tool_call_id: m.tool_call_id })));
 ipcMain.handle('orbiter:send', (_e, id, text) => { orbiter.send(id, text).catch(() => {}); return true; });
 ipcMain.handle('orbiter:diffs', (_e, id) => orbiter.diffs(id));

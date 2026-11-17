@@ -87,6 +87,11 @@ const TOOL_SCHEMAS = [
   fn('calendar_delete', 'Delete a Google Calendar event by id.', { id: { type: 'string' } }, ['id']),
   fn('generate_image', 'Make an image from a text prompt. Saves a PNG to Pictures\\Orbit and shows it in the chat.', { prompt: { type: 'string' }, size: { type: 'string', enum: ['1024x1024', '1536x1024', '1024x1536'] }, name: { type: 'string', description: 'File name without extension.' } }, ['prompt']),
   fn('publish_site', 'Publish a folder with an index.html (a page you wrote with write_file) as a live public website on Netlify, and return its link. Publishing the same name again updates it.', { folder: { type: 'string', description: 'Folder path; relative paths are in Orbit\'s working folder.' }, name: { type: 'string', description: 'Short site name, letters and dashes.' } }, ['folder', 'name']),
+  fn('show_report', 'Show a longer answer (an update, summary, research, notes, a comparison) right in the chat as a card the user can expand and collapse. Use this instead of a file unless the user asked for a file. Write markdown: ## sections, short paragraphs, bullets, | tables |.', {
+    title: { type: 'string', description: 'A few words naming it.' },
+    summary: { type: 'string', description: 'One line shown while it is collapsed: the headline.' },
+    markdown: { type: 'string', description: 'The whole thing in markdown.' },
+  }, ['title', 'markdown']),
   fn('make_file', 'Make a finished file from your research and show it in the chat as a card the user can open or save. Formats: pdf (default, a designed report), pptx (slides: each ## heading becomes a slide, tables get their own slide), docx (Word), html, md, txt, csv (from the first markdown table, or rows). Research first, then write the whole thing as markdown in content: ## sections, short paragraphs, bullet lists and | tables |. Put source links in sources, not in the body.', {
     format: { type: 'string', enum: ['pdf', 'pptx', 'docx', 'html', 'md', 'txt', 'csv'] },
     title: { type: 'string' },
@@ -124,6 +129,27 @@ const TOOL_SCHEMAS = [
 
 const RISKY = /\b(rm|rmdir|rd|del|erase|Remove-Item|ri|format|diskpart|shutdown|Restart-Computer|Stop-Computer|Stop-Process|taskkill|kill|reg\s+(delete|add)|Set-ItemProperty|Set-ExecutionPolicy|mv|move|Move-Item|Rename-Item|ren|git\s+push|git\s+reset|npm\s+(i|install|uninstall)|pip\s+(install|uninstall)|winget|choco|Invoke-WebRequest|iwr|curl|wget|Send-MailMessage|New-Service|sc\s+delete|icacls|takeown|cipher|bcdedit|schtasks)\b|>\s*[^&|]/i;
 
+// The user's latest message in the lane a tool runs in (main chat or a project).
+function lastUserText(agent, lane) {
+  try {
+    const t = lane.project && agent.hub ? agent.hub.thread(lane.project) : agent.store.getThread();
+    const pend = (agent.pendingForMain || []).map(x => x.text);
+    for (let i = t.length - 1; i >= 0; i--) { const m = t[i]; if (m.role !== 'user' || (m.hidden && !/^\(Follow-up/.test(m.content || ''))) continue; const c = m.display || (typeof m.content === 'string' ? m.content : ((m.content || []).find(p => p.type === 'text') || {}).text || ''); return [c, ...pend].join('\n'); }
+  } catch {}
+  return '';
+}
+// Big photos (phone pictures, 4K screenshots) are resized to at most 1600 px and sent as JPEG, so
+// one picture can't push a request over the provider's size cap.
+function shrinkImage(dataUrl, max = 1600) {
+  try {
+    if (String(dataUrl).length < 1.2e6) return dataUrl;
+    const { nativeImage } = require('electron'); if (!nativeImage) return dataUrl;
+    let img = nativeImage.createFromDataURL(dataUrl); if (img.isEmpty()) return dataUrl;
+    const { width, height } = img.getSize(); const k = Math.min(1, max / Math.max(width, height));
+    if (k < 1) img = img.resize({ width: Math.round(width * k), height: Math.round(height * k), quality: 'good' });
+    return 'data:image/jpeg;base64,' + img.toJPEG(75).toString('base64');
+  } catch { return dataUrl; }
+}
 function expand(p, base) {
   if (!p) return base;
   let s = String(p).replace(/^~(?=$|[\\/])/, os.homedir());
@@ -178,6 +204,10 @@ function buildTools(agent, lane = { id: 'main' }) {
     } catch { return snap; }
   };
   const tools = {
+    async show_report({ title, summary, markdown }) {
+      const info = { title: String(title || 'Report').slice(0, 120), summary: String(summary || '').slice(0, 300), markdown: String(markdown || '').slice(0, 60000) };
+      return { text: `Shown in the chat as an expandable card titled "${info.title}". Don't repeat its contents; give the headline in a line.\n<!--orbit-report ${JSON.stringify(info)}-->`, report: info };
+    },
     async make_file(a) {
       const { format, data } = await docs.render({ ...a });
       const dir = lane.project && agent.hub ? agent.hub.filesDir(lane.project) : path.join(os.homedir(), 'Documents', 'Orbit');
@@ -194,6 +224,7 @@ function buildTools(agent, lane = { id: 'main' }) {
       let dataUrl;
       if (/^https?:/.test(p)) { const r = await fetch(p); if (!r.ok) throw new Error(`HTTP ${r.status}`); const ct = r.headers.get('content-type') || 'image/jpeg'; dataUrl = `data:${ct};base64,${Buffer.from(await r.arrayBuffer()).toString('base64')}`; }
       else { const full = expand(p, store.workDir); const ext = path.extname(full).slice(1).toLowerCase().replace('jpg', 'jpeg'); dataUrl = `data:image/${ext || 'png'};base64,${fs.readFileSync(full).toString('base64')}`; }
+      dataUrl = shrinkImage(dataUrl);
       const s = store.getSettings();
       if (question && s.visionModel) return agent.askVision(dataUrl, question);
       return { text: 'The image is attached next.', image: dataUrl };
@@ -483,6 +514,11 @@ function buildTools(agent, lane = { id: 'main' }) {
     async orbiter_status() { return agent.orbiter ? agent.orbiter.statusText() : 'Orbiter is not available.'; },
     async orbiter_handoff({ task, context, folder, session_id, tier, mode }) {
       const o = agent.orbiter; if (!o) throw new Error('Orbiter is not available.');
+      // Handoff only when the user wants it: by name, or a yes to an offer when the setting allows offers.
+      const said = lastUserText(agent, lane);
+      const byName = /\borbiter\b/i.test(said) && !/\b(don'?t|do not|never|no|stop|without|not)\b[^.]{0,40}\borbiter\b/i.test(said);
+      const yes = agent.store.getSettings().orbiterHandoffMode === 'suggest' && /^\s*(yes|yeah|yep|ok(ay)?|sure|go ahead|do it|hand it over)\b/i.test(said);
+      if (!byName && !yes) throw new Error('Not handed off: the user has not asked for Orbiter. Do the work yourself, here in this chat.');
       let sess = session_id && o.session(session_id);
       if (!sess) {
         if (folder && !fs.existsSync(expand(folder, os.homedir()))) throw new Error(`Folder not found: ${folder}. Ask the user which folder.`);
@@ -513,4 +549,4 @@ function buildTools(agent, lane = { id: 'main' }) {
   });
 }
 
-module.exports = { buildTools, TOOL_SCHEMAS, allSchemas };
+module.exports = { buildTools, TOOL_SCHEMAS, allSchemas, shrinkImage };

@@ -161,7 +161,7 @@ function install(Agent) {
     if (!s.apiKey) { emit({ type: 'error', message: 'Orbit needs a brain first. Open Settings and add your base URL, API key and model.' }); return; }
     const append = (m) => { const t = this.hub.thread(pid); t.push(m); this.hub.saveThread(pid, t); };
     let content = text;
-    if (attachments && attachments.length) content = [{ type: 'text', text: (text || 'Look at this.') + this.saveAttachments(attachments) }, ...attachments.map(a => ({ type: 'image_url', image_url: { url: a.dataUrl } }))];
+    if (attachments && attachments.length) content = [{ type: 'text', text: (text || 'Look at this.') + this.saveAttachments(attachments) }, ...attachments.map(a => ({ type: 'image_url', image_url: { url: require('./tools').shrinkImage(a.dataUrl) } }))];
     const msg = { role: 'user', content, ui: true, id: uid(), at: Date.now() };
     append(msg);
     emit({ type: 'user_message', id: msg.id, text, images: (attachments || []).map(a => a.dataUrl) });
@@ -248,6 +248,8 @@ function projectSection(p, hub) {
 You are working inside the user's project "${p.name}". This chat is only about this project.
 - Project files folder: ${hub.filesDir(p.id)}
   Save everything you make for this project there (use full paths with write_file and run_command cwd).
+- Before you build, change or delete anything in this project, make sure you know what the user wants. If the request is vague, or the brief has no clear goal, call ask_user FIRST with 1 to 3 short questions (what it should do, who it's for, the look or stack, what must not change), each with likely choices, and one choice "Decide yourself". Only skip asking when the request already says exactly what to do, or the user says to decide yourself; then say in one line what you assumed.
+- Never rewrite or delete existing project files without saying which ones first.
 - The brief below is this project's standing memory. When a goal, decision, file, or open thread changes, update it with project_brief (send the whole brief). Keep it short.
 
 ## Brief

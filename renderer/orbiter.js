@@ -114,6 +114,22 @@
     await loadSessions(); paintChips(); paintTitle();
     const [thread, diffs] = await Promise.all([O.thread(id), O.diffs(id)]);
     renderThread(thread, diffs); renderPane(); input.focus();
+    const me = sessions.find(x => x.id === id);
+    if (me && me.busy) working(true, me.step, me.started);
+    try { for (const e of await O.pending(id)) if (!feed.querySelector(`.ask[data-ask="${e.id}"]`)) addAsk(e); } catch {}
+  }
+  // ---------- "Orbiter is working" row: always at the bottom while a session runs ----------
+  let workT = null, workAt = 0;
+  function working(on, label, since) {
+    let w = feed.querySelector('.working');
+    if (!on) { if (w) w.remove(); clearInterval(workT); workT = null; return; }
+    if (!w) { w = document.createElement('div'); w.className = 'working'; w.innerHTML = '<span class="orb"><i></i><i></i><i></i></span><span class="wl"></span><span class="wt"></span>'; feed.appendChild(w); workAt = since || Date.now(); }
+    else if (since) workAt = since;
+    if (label) w.querySelector('.wl').textContent = label;
+    else if (!w.querySelector('.wl').textContent) w.querySelector('.wl').textContent = 'Thinking';
+    const tick = () => { const s2 = Math.max(0, Math.round((Date.now() - workAt) / 1000)); w.querySelector('.wt').textContent = s2 < 60 ? `${s2}s` : `${Math.floor(s2 / 60)}m ${s2 % 60}s`; };
+    tick(); if (!workT) workT = setInterval(tick, 1000);
+    scroll();
   }
   function paintTitle() { $('#tbSess').innerHTML = cur ? `<b>${esc(cur.name)}</b><span class="path">${esc(cur.folder)}</span>` : ''; }
   function paintChips() {
@@ -141,7 +157,7 @@
     const toolRes = new Map(thread.filter(m => m.role === 'tool').map(m => [m.tool_call_id, m]));
     const dq = [...diffs];
     for (const m of thread) {
-      if (m.role === 'user') addUser(m.display || m.content, m.compact);
+      if (m.role === 'user') addUser(m.display || m.content, m.compact, m.checkpoint);
       else if (m.role === 'assistant') {
         if (m.content) addAssistant(m.content);
         for (const c of m.tool_calls || []) {
@@ -154,9 +170,31 @@
     }
     scroll(true);
   }
-  function el(cls, html) { const d = document.createElement('div'); d.className = cls; d.innerHTML = html; feed.appendChild(d); return d; }
+  function el(cls, html) { const d = document.createElement('div'); d.className = cls; d.innerHTML = html; const w = feed.querySelector('.working'); w ? feed.insertBefore(d, w) : feed.appendChild(d); return d; }
   function clearEmpty() { const e = feed.querySelector('.empty'); if (e) e.remove(); }
-  function addUser(text, compact) { clearEmpty(); el('u', `<div class="b ${compact ? 'compact' : ''}">${esc(text)}</div>`); }
+  function addUser(text, compact, checkpoint) {
+    clearEmpty();
+    const d = el('u', `<div class="uw"><div class="b ${compact ? 'compact' : ''}">${esc(text)}</div>${checkpoint && !compact ? '<button class="u-edit" title="Edit and resend (undoes what came after)"><svg viewBox="0 0 16 16"><path d="M3 13h3l7-7-3-3-7 7z"/></svg>Edit</button>' : ''}</div>`);
+    const b = d.querySelector('.u-edit'); if (b) b.onclick = () => editUser(d, text, checkpoint);
+  }
+  // Edit an earlier message: undo the code and chat back to it, then send the new words.
+  function editUser(d, text, checkpoint) {
+    if (d.classList.contains('editing')) return; d.classList.add('editing');
+    const bub = d.querySelector('.b'); const box = document.createElement('div'); box.className = 'ueb';
+    box.innerHTML = `<textarea rows="3"></textarea><div class="uebar"><span>Undoes the changes made after this message, then redoes it.</span><button class="btn" data-x>Cancel</button><button class="btn pri" data-ok>Save and send</button></div>`;
+    const ta = box.querySelector('textarea'); ta.value = text; bub.after(box); bub.hidden = true; ta.focus();
+    const close = () => { box.remove(); bub.hidden = false; d.classList.remove('editing'); };
+    box.querySelector('[data-x]').onclick = close;
+    const ok = async () => {
+      const v = ta.value.trim(); if (!v || !cur) return; if (v === text) return close();
+      if (sessions.find(x => x.id === cur.id && x.busy)) { await O.stop(cur.id); for (let i = 0; i < 60 && (await O.sessions()).find(x => x.id === cur.id && x.busy); i++) await new Promise(r => setTimeout(r, 100)); }
+      const r = await O.rewind(cur.id, checkpoint, { code: true, chat: true });
+      if (!r || !r.ok) { toast((r && r.error) || "Couldn't edit that message."); return close(); }
+      await open(cur.id); addUser(v); scroll(true); O.send(cur.id, v);
+    };
+    box.querySelector('[data-ok]').onclick = ok;
+    ta.onkeydown = (ev) => { if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); ok(); } else if (ev.key === 'Escape') close(); };
+  }
   function addAssistant(text, id) { clearEmpty(); const d = el('a', `<div class="md">${md(text)}</div>`); if (id) d.dataset.id = id; return d; }
   function addTool(t) {
     clearEmpty();
@@ -313,8 +351,8 @@
     $('#slash').hidden = true;
     if (!cur) { const folder = project ? project.folder : await O.pickFolder(); if (!folder) return; cur = await O.create(project ? { folder, projectId: project.id, name: `${project.name} · 1`, tier: project.tier || '' } : { folder }); await loadSessions(); paintChips(); paintTitle(); }
     if (!raw && text.startsWith('/')) { const [cmd, ...rest] = text.split(' '); input.value = ''; autoGrow(); return runSlash(cmd.toLowerCase(), rest.join(' ').trim()); }
-    input.value = ''; autoGrow();
-    addUser(text); scroll(true);
+    input.value = ''; autoGrow(); input.placeholder = 'Ask Orbiter to build, fix or explain…  ( / for commands, @ for files )';
+    addUser(text); scroll(true); working(true, 'Thinking', Date.now());
     await O.send(cur.id, text);
   }
   function autoGrow() { input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 220) + 'px'; }
@@ -326,14 +364,16 @@
     if (e.type === 'orbiter_sessions' || e.type === 'orbiter_busy') { loadSessions().then(async () => { if (cur) { cur = await O.session(cur.id) || cur; paintChips(); renderPane(); } }); }
     if (!cur || e.session !== cur.id) return;
     switch (e.type) {
-      case 'assistant_start': streaming[e.id] = ''; addAssistant('', e.id).querySelector('.md').classList.add('cursor'); break;
+      case 'orbiter_busy': if (e.busy) { working(true, 'Thinking', Date.now()); } else { working(false); const last = [...feed.querySelectorAll('.a .md')].pop(); if (last && /\?\s*$/.test(last.textContent.trim().slice(-200))) { input.placeholder = 'Reply to Orbiter…'; input.focus(); } } break;
+      case 'orbiter_step': working(true, e.label); break;
+      case 'assistant_start': working(true, 'Writing'); streaming[e.id] = ''; addAssistant('', e.id).querySelector('.md').classList.add('cursor'); break;
       case 'delta': { streaming[e.id] = (streaming[e.id] || '') + e.text; const d = feed.querySelector(`.a[data-id="${e.id}"] .md`); if (d) d.innerHTML = md(streaming[e.id]); scroll(); break; }
       case 'assistant_end': { const d = feed.querySelector(`.a[data-id="${e.id}"]`); if (d) { d.querySelector('.md').classList.remove('cursor'); d.querySelector('.md').innerHTML = md(e.text); } else if (!e.interim) addAssistant(e.text, e.id); scroll(); break; }
-      case 'tool_start': addTool({ id: e.id, name: e.name, label: e.label, args: e.args }); scroll(); break;
+      case 'tool_start': working(true, e.label); addTool({ id: e.id, name: e.name, label: e.label, args: e.args }); scroll(); break;
       case 'tool_end': { const d = feed.querySelector(`.tool[data-id="${e.id}"]`); if (d) { d.classList.remove('run'); if (!e.ok) d.classList.add('bad'); d.querySelector('.out').textContent = e.preview || ''; } break; }
       case 'orbiter_diff': addDiff(e); scroll(); if (tab === 'changes') renderPane(); break;
       case 'orbiter_todos': cur.todos = e.todos; if (tab === 'todo') renderPane(); break;
-      case 'approval': case 'question': addAsk(e); break;
+      case 'approval': case 'question': working(true, 'Waiting for you'); addAsk(e); break;
       case 'approval_done': case 'question_done': { const d = feed.querySelector(`.ask[data-ask="${e.id}"]`); if (d) { d.classList.add('done'); d.querySelector('.res').textContent = e.type === 'question_done' ? `Answered: ${e.answer}` : e.approved ? 'Allowed' : 'Denied'; } break; }
       case 'orbiter_rewound': renderPane(); break;
       case 'stream_reset': { const d = feed.querySelector(`.a[data-id="${e.id}"]`); if (d) d.remove(); delete streaming[e.id]; break; }

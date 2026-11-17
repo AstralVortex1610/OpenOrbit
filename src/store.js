@@ -17,7 +17,7 @@ const DEFAULT_SETTINGS = {
   approvalMode: 'risky', // 'risky' | 'always' | 'never'
   dailyTokenCap: 2000000,
   chatThinking: 'quick', // quick | default | deep: how long reasoning models think in chat, projects and tasks
-  orbiterThinking: 'default', // same, for Orbiter coding sessions
+  orbiterThinking: 'quick', // same, for Orbiter coding sessions (quick since 0.12.4)
   contextBudget: 24000, // max input tokens Orbit sends a model per step (older history is trimmed)
   maxSteps: 25,
   theme: 'dark',
@@ -66,7 +66,8 @@ const DEFAULT_SETTINGS = {
   orbiterTheme: 'orbit-dark',
   orbiterLastFolder: '',
   orbiterAllow: [], // command prefixes Orbiter may run without asking
-  orbiterHandoff: true, // chat may suggest and hand coding work to Orbiter
+  orbiterHandoff: true, // (old, unused since 0.12.4)
+  orbiterHandoffMode: 'off', // off: only when the user asks for Orbiter by name | suggest: may offer, hands off only after a yes
 };
 const LIST_KEYS = new Set(['backupModels', 'mcpServers', 'apiConnectors', 'modelTiers']);
 const TIER_IDS = ['spark', 'pulse', 'surge'];
@@ -171,7 +172,10 @@ class Store {
 
   // ----- settings -----
   getSettings() {
-    const s = { ...DEFAULT_SETTINGS, ...this._raw() };
+    const raw = this._raw();
+    // 0.12.4: Orbiter thinks Quick by default (it was too slow on Model default). Applied once.
+    if (!raw._m124 && raw === this._settingsRaw && Object.keys(raw).length) { raw._m124 = true; if (raw.orbiterThinking === 'default') raw.orbiterThinking = 'quick'; try { this._write('settings.json', raw); } catch {} }
+    const s = { ...DEFAULT_SETTINGS, ...raw };
     s.apiKey = '';
     if (s.apiKeyEnc) {
       try {

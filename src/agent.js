@@ -15,7 +15,7 @@ const { Passwords } = require('./passwords');
 const { Hub, install: installHub } = require('./hub');
 
 const PARALLEL_SAFE = new Set(['glob', 'grep', 'web_fetch', 'orbiter_status', 'password_list', 'read_file', 'list_dir', 'web_search', 'fetch_url', 'memory_list', 'memory_read', 'skill_read', 'list_tasks', 'windows_list', 'screenshot', 'task_status', 'gmail_search', 'gmail_read', 'calendar_events', 'start_task', 'view_image', 'connectors_list', 'image_metadata', 'place_lookup', 'whois_lookup', 'dns_lookup', 'subdomains', 'ip_lookup', 'site_tech', 'wayback', 'org_lookup', 'public_figure']);
-const SIDE_TOOLS = new Set(['orbiter_status', 'orbiter_handoff', 'web_search', 'fetch_url', 'read_file', 'list_dir', 'memory_list', 'memory_read', 'memory_append', 'skill_read', 'list_tasks', 'open', 'task_status', 'start_task', 'stop_task', 'tell_main', 'forward_to_main', 'password_save', 'password_list', 'gmail_search', 'gmail_read', 'calendar_events', 'notify_user', 'schedule_task']);
+const SIDE_TOOLS = new Set(['orbiter_status', 'web_search', 'fetch_url', 'read_file', 'list_dir', 'memory_list', 'memory_read', 'memory_append', 'skill_read', 'list_tasks', 'open', 'task_status', 'start_task', 'stop_task', 'tell_main', 'forward_to_main', 'password_save', 'password_list', 'gmail_search', 'gmail_read', 'calendar_events', 'notify_user', 'schedule_task']);
 const NO_WORKER = new Set(['start_task', 'wait_tasks', 'tell_main', 'forward_to_main', 'stop_task', 'project_brief']);
 const NO_MAIN = new Set(['tell_main', 'forward_to_main', 'project_brief']);
 
@@ -25,6 +25,7 @@ let AGENT = null;
 const schemasFor = (allow) => (AGENT ? allSchemas(AGENT) : TOOL_SCHEMAS).filter(t => allow(t.function.name));
 
 class Agent {
+  static BODY_LIMIT = 7 * 1024 * 1024; // stay under the common 8 MB request cap
   constructor({ store, emit, reachOut }) {
     this.store = store;
     this.emit = emit;
@@ -74,6 +75,23 @@ class Agent {
     this.workerQueue = [];
     for (const [id, res] of this.pending) res({ approved: false, answer: '(the user stopped the task)' });
     this.pending.clear();
+  }
+  // Edit an earlier message: stop whatever that conversation is doing, cut it back to just before
+  // the message, and send the new words as if they were said then.
+  async editMessage(scope, id, text) {
+    const proj = scope && scope !== 'main';
+    const lane = proj ? 'proj-' + scope : 'main';
+    const busy = () => (proj ? this.projectBusy(scope) : this.mainBusy);
+    if (busy()) { this.stopLane(lane); for (let i = 0; i < 100 && busy(); i++) await new Promise(r => setTimeout(r, 50)); }
+    if (proj) this.projQ && this.projQ.set(scope, []); else this.queue = this.queue.filter(j => j.type !== 'user');
+    const t = proj ? this.hub.thread(scope) : this.store.getThread();
+    const i = t.findIndex(m => m.id === id && m.role === 'user');
+    if (i < 0) throw new Error('That message is no longer in the conversation.');
+    const cut = t.slice(0, i);
+    proj ? this.hub.saveThread(scope, cut) : this.store.saveThread(cut);
+    this.emit({ type: 'thread_reset', scope: proj ? scope : 'main' });
+    if (proj) this.projectSend(scope, text, []); else { this.queue.push({ type: 'user', text, attachments: [], source: 'app' }); this._drain(); }
+    return true;
   }
   stopLane(id) {
     if (/^(proj|panel)-/.test(id)) { this.ctls.get(id)?.abort(); this._rejectPendingFor(id); return `Stopping ${id}.`; }
@@ -239,7 +257,7 @@ class Agent {
       this._append({ role: 'user', content: `[Scheduled task "${proactiveTask.name}"] ${proactiveTask.prompt}`, hidden: true, at: Date.now() });
     } else {
       let content = userText;
-      if (attachments && attachments.length) content = [{ type: 'text', text: (userText || 'Look at this.') + this.saveAttachments(attachments) }, ...attachments.map(a => ({ type: 'image_url', image_url: { url: a.dataUrl } }))];
+      if (attachments && attachments.length) content = [{ type: 'text', text: (userText || 'Look at this.') + this.saveAttachments(attachments) }, ...attachments.map(a => ({ type: 'image_url', image_url: { url: require('./tools').shrinkImage(a.dataUrl) } }))];
       // quiet: the user's words are already on screen (they came in through the side lane)
       const msg = quiet ? { role: 'user', content, hidden: true, at: Date.now() } : { role: 'user', content, ui: true, id: uid(), at: Date.now() };
       if (source && source !== 'app') msg.via = source;
@@ -316,12 +334,13 @@ class Agent {
 You and the main task are the same Orbit sharing one conversation. The main task is busy, so this message reached you, its quick side lane. Never say you don't know what the user means when the message could be about the running task: it almost always is.
 
 Decide first:
-1. About the running task in any way (a follow-up, an extra detail, a correction, "also…", "and…", "it", "that", "same thing but…", a question about its result): call forward_to_main with the user's words, then reply in a few words that you've added it to what you're doing ("Got it, adding that."). Do not try to do it yourself.
+1. About the running task in any way (a follow-up, an extra detail, a correction, an instruction or preference such as "don't…", "stop doing…", "instead…", "never…", "also…", "and…", "it", "that", "same thing but…", a question about its result): call forward_to_main with the user's words, then reply in a few words that you've added it to what you're doing ("Got it, adding that."). Do not try to do it yourself.
 2. A question about progress ("how's it going", "what are you doing"): answer from the main task state below (or task_status), in one or two sentences.
 3. A clearly separate quick question (a fact, a definition, something to look up): answer it in one to three sentences.
 4. A separate piece of real work: start_task with a complete instruction, then say you've started it.
 5. "Stop" or "cancel": stop_task with the right id ("main" for the main task).
 If unsure between 1 and anything else, choose 1.
+Never promise what the main task will or won't do (you don't control it). Forward the instruction and say you've passed it on.
 
 What the main task is doing:
 ${mainNow || '(main is finishing up)'}
@@ -340,6 +359,8 @@ ${this._recentTranscript(14) || '(none)'}
         schemas: schemasFor(n => SIDE_TOOLS.has(n)), model: s.fastModel || s.model, maxSteps: 6, streamToUI: true,
       });
       let reply = res.limit ? 'Still checking on that. Ask me again in a moment.' : res.text;
+      // An instruction or preference while main works must reach main, whatever the side model decided.
+      if (this.mainBusy && !tools._forwarded && /\b(don'?t|do not|never|stop|instead|no need|not (to|that)|only|always|use|switch)\b/i.test(text)) { this.forwardToMain(text, source); tools._forwarded = true; if (!/\b(pass|passing|added|adding|forward|told|telling)\b/i.test(reply) || /\b(won'?t|will not|i'?ll make sure)\b/i.test(reply)) reply = 'Got it, passing that to what I\'m working on now.'; }
       // A shrug means it missed the link to the running task: hand it to main instead.
       if (!tools._forwarded && /(don'?t|do not|not sure) (know|understand|follow)|not sure what (you|you're|that)|what (are you|you're) (referring|talking) (to|about)|could you clarify|more context/i.test(reply)) {
         this.forwardToMain(text, source); tools._forwarded = true;
@@ -443,6 +464,8 @@ ${this._recentTranscript(14) || '(none)'}
     // cache of it. Clock, todo and status lines change every step; the rest only on real changes.
     const volatile = /^(- Now: .*|Current todo list:[\s\S]*?)$/gm;
     let sysCache = null;
+    let acted = 0, nudged = 0; // successful acting tool calls this turn; check-ins sent
+    const lastUser = (() => { try { const c = context(); for (let i = c.length - 1; i >= 0; i--) if (c[i].role === 'user' && !c[i].hidden && typeof c[i].content === 'string') return c[i].content; } catch {} return ''; })();
     const sys = () => { const v = system(); const k = v.replace(volatile, '').replace(/^- \[(pending|in_progress|completed)\] .*$/gm, ''); if (!sysCache || sysCache.k !== k) sysCache = { k, v }; return sysCache.v; };
     try {
     for (let step = 0; step < maxSteps; step++) {
@@ -470,7 +493,17 @@ ${this._recentTranscript(14) || '(none)'}
         throw e;
       } finally { ctl.signal.removeEventListener('abort', relay); if (steps.get(lane) === entry) steps.delete(lane); }
       this.store.addUsage(res.tokens);
-      if (!res.toolCalls.length) return { text: (res.content || '').trim(), msgId };
+      if (!res.toolCalls.length) {
+        const text = (res.content || '').trim();
+        const nudge = !String(lane).startsWith('side-') && !proactive && nudged < 2 ? Agent.checkReply(text, { acted, lastUser, lane }) : null;
+        if (nudge) {
+          nudged++;
+          if (text) { append({ role: 'assistant', content: text, at: Date.now(), id: msgId, retracted: true }); emit({ type: 'stream_reset', id: msgId }); }
+          append({ role: 'user', content: nudge, hidden: true, at: Date.now() });
+          continue;
+        }
+        return { text, msgId };
+      }
 
       const assistant = { role: 'assistant', content: res.content || null, at: Date.now(), id: msgId, tool_calls: res.toolCalls };
       if (res.content && res.content.trim()) { assistant.ui = lane === 'main' || lane.startsWith('proj-'); emit({ type: 'assistant_end', id: msgId, text: res.content.trim(), interim: true }); }
@@ -492,8 +525,9 @@ ${this._recentTranscript(14) || '(none)'}
         } catch (e) { result = { text: `Error: ${e.message}` }; }
         if (typeof result === 'string') result = { text: result };
         const text = String(result.text ?? '').slice(0, 14000);
-        emit({ type: 'tool_end', id: callId, ok: !text.startsWith('Error'), preview: text.replace(/\n?<!--orbit-file [\s\S]*?-->/, '').slice(0, 600), image: result.image || null, file: result.file || null });
-        return { call, name, text, image: result.image, file: result.file };
+        if (!text.startsWith('Error') && !PARALLEL_SAFE.has(name) && !['todo_write', 'ask_user', 'exit_plan_mode', 'orbiter_status', 'notify_user', 'show_report'].includes(name)) acted++;
+        emit({ type: 'tool_end', id: callId, ok: !text.startsWith('Error'), preview: text.replace(/\n?<!--orbit-(file|report) [\s\S]*?-->/, '').slice(0, 600), image: result.image || null, file: result.file || null, report: result.report || null });
+        return { call, name, text, image: result.image, file: result.file, report: result.report };
       };
       // Read-only calls in the same step run at once; anything that acts runs in order.
       // Runs of read-only calls go at once; anything that acts waits its turn, in order.
@@ -505,7 +539,7 @@ ${this._recentTranscript(14) || '(none)'}
         results.push(...await Promise.all(res.toolCalls.slice(i, j).map(runCall))); i = j;
       }
       const images = [];
-      for (const r of results) { append({ role: 'tool', tool_call_id: r.call.id, name: r.name, content: r.text, at: Date.now(), ...(r.file ? { ui: true } : {}) }); if (r.image) images.push({ type: 'image_url', image_url: { url: r.image } }); }
+      for (const r of results) { append({ role: 'tool', tool_call_id: r.call.id, name: r.name, content: r.text, at: Date.now(), ...(r.file || r.report ? { ui: true } : {}) }); if (r.image) images.push({ type: 'image_url', image_url: { url: r.image } }); }
       // Keep every tool call answered, even if we stopped partway.
       for (const c of res.toolCalls.slice(results.length)) append({ role: 'tool', tool_call_id: c.id, name: c.function.name, content: 'Not run: the task was stopped.', at: Date.now() });
       if (images.length) append({ role: 'user', content: [{ type: 'text', text: '(Image from the tool call above.)' }, ...images], hidden: true, at: Date.now() });
@@ -514,6 +548,43 @@ ${this._recentTranscript(14) || '(none)'}
     }
     return { limit: maxSteps, text: '' };
     } finally { steps.delete(lane); }
+  }
+  // A final reply that doesn't match what happened: it claims work it didn't do, or says it is about
+  // to ask or do something and then stops. Returns a hidden note that sends the model back to it.
+  static checkReply(text, { acted, lastUser }) {
+    const t = String(text || '');
+    if (!t) return null;
+    const tail = t.slice(-400);
+    if (/\b(let me ask|i'?ll ask|i will ask|i need to ask|a few (quick )?questions|some questions (for|before))\b/i.test(tail) && !/\?/.test(tail))
+      return '(Check: you said you would ask the user something, but you did not ask anything. Call ask_user now with your actual questions and 2 to 4 likely choices each. Do not stop without asking.)';
+    if (/(^|[.!\n]\s*)(let me(?! know)|i'?ll now|i will now|now i'?ll|next,? i'?ll|i'?m going to|starting (on|with))\b[^.?!]{0,160}[.:…]?\s*$/i.test(tail))
+      return '(Check: your reply ends by saying what you will do next, but you stopped. Do it now with your tools, or if it is finished, say plainly what was done.)';
+    const asksChange = /\b(fix|change|update|edit|add|remove|delete|make|build|create|implement|rename|refactor|move|set|install|write|put)\b/i.test(lastUser || '');
+    const claims = /\b(i(?:'ve| have)? (fixed|updated|changed|added|removed|implemented|created|built|made|set up|moved|renamed|refactored|installed|written|wrote)|(it'?s|that'?s|all|now) (done|fixed|sorted|working)|has been (fixed|updated|changed|added|removed|implemented)|is now (fixed|updated|working|done))\b/i.test(t);
+    const admits = /\b(no changes?|didn'?t (change|make|edit)|nothing (to|was|needed) (change|fix)|haven'?t|not yet|couldn'?t|could not|unable to|already (there|in place|does|done))\b/i.test(t);
+    if (asksChange && claims && !admits && acted === 0)
+      return '(Check: your reply says the work is done, but nothing was changed in this turn: no edit, write or command succeeded. If it still needs doing, do it now. If it truly needed no change, say so plainly and why. Never claim a change you did not make.)';
+    return null;
+  }
+  // Shrink a request's messages to fit `limit` bytes of JSON: older images go first, then (if asked or
+  // still too big) every image, then the longest texts are trimmed, oldest first. The newest user
+  // request is never cut.
+  static fitMessages(messages, limit, { noImages = false } = {}) {
+    const size = (ms) => JSON.stringify(ms).length;
+    let ms = messages.map(m => ({ ...m, content: Array.isArray(m.content) ? m.content.map(p => ({ ...p })) : m.content }));
+    const hasImg = (m) => Array.isArray(m.content) && m.content.some(p => p.type === 'image_url');
+    const dropImg = (m, note) => { const t = m.content.filter(p => p.type === 'text').map(p => p.text).join('\n'); m.content = (t ? t + '\n' : '') + note; };
+    const imgs = ms.map((m, i) => (hasImg(m) ? i : -1)).filter(i => i >= 0);
+    for (const i of imgs.slice(0, -1)) if (size(ms) > limit || noImages) dropImg(ms[i], '(Older image removed: the request was too large.)');
+    if (imgs.length && (noImages || size(ms) > limit)) dropImg(ms[imgs[imgs.length - 1]], '(Image removed: it was too large to send. Ask the user for a smaller one or describe it in words.)');
+    let lastUser = -1; for (let i = ms.length - 1; i >= 0; i--) if (ms[i].role === 'user') { lastUser = i; break; }
+    for (let cap = 20000; size(ms) > limit && cap >= 500; cap = Math.floor(cap / 2)) {
+      for (let i = 0; i < ms.length && size(ms) > limit; i++) {
+        if (i === lastUser || ms[i].role === 'system' || typeof ms[i].content !== 'string' || ms[i].content.length <= cap) continue;
+        const t = ms[i].content; ms[i].content = t.slice(0, Math.floor(cap * 0.7)) + `\n…[${t.length - cap} chars trimmed to fit the request size]…\n` + t.slice(-Math.floor(cap * 0.3));
+      }
+    }
+    return ms;
   }
   static _modelKey(s, m) { return String((s && s.baseUrl) || '') + '|' + String(m || (s && s.model) || ''); }
   // The user picked another model while a lane is mid-request: drop that request and redo the step
@@ -594,7 +665,8 @@ ${this._recentTranscript(14) || '(none)'}
 - generate_image makes pictures${s.imageModel ? '' : ' (needs an image model set in Settings first)'}. publish_site puts a folder with index.html online on Netlify${s.netlifyToken ? '' : ' (needs a Netlify token in Settings first)'}. To make a web page: write index.html (and assets) with write_file in a folder, then publish_site.
 
 # Files
-- When the user wants research, a report, notes, a comparison, slides, or anything to keep or share, research first, then make_file. PDF is the default; use pptx for slides/presentations, docx for Word, md/txt/html/csv when asked. The file shows in chat as a card, so after make_file just say it's ready in a line or two and give the headline finding.
+- Updates, summaries, research, notes and comparisons go IN THE CHAT, not in a file: for anything longer than a short reply, call show_report. It appears as a card the user can expand and collapse. Then say the headline in a line.
+- Only make a file (make_file) when the user asks for one by type or to keep/share/send/print it: "PDF", "doc", "Word", "slides", "presentation", "file", "download". PDF is the default then; pptx for slides, docx for Word, md/txt/html/csv when asked. After make_file just say it's ready in a line or two.
 - Write content as clean markdown: ## sections, short paragraphs, bullets, | tables |. Lead with the answer in summary. Put every source URL in sources.
 
 # Connectors
@@ -602,8 +674,9 @@ ${this.connectors && this.connectors.schemas().length ? `- Connected: ${this.con
 ${s.osintBeta ? '\n' + OSINT_PROMPT + '\n' : ''}
 # Orbiter (your coding agent)
 - Orbiter is Orbit's built-in coding agent (like Claude Code): it works inside one folder with file edits, diffs, checkpoints, a todo list and its own model tier.
-- orbiter_status shows every Orbiter session and what it is doing. Use it whenever the user asks about Orbiter, coding sessions, or "what's running".${s.orbiterHandoff !== false ? `
-- When the user asks for real coding work in a codebase (build a feature, fix a bug across files, refactor, run tests), say in one line that Orbiter will do it better, then call orbiter_handoff yourself with the full task and everything you already know (files, errors, decisions). Never make the user retype it. Small one-off snippets you can answer yourself.` : ''}
+- orbiter_status shows every Orbiter session and what it is doing. Use it whenever the user asks about Orbiter, coding sessions, or "what's running".
+${s.orbiterHandoffMode === 'suggest' ? `- For big coding work in a codebase you may OFFER Orbiter in one line ("Want Orbiter to take this?"), then keep going yourself unless they say yes. Only call orbiter_handoff after a clear yes, passing the full task and everything you already know.` : `- Do coding work yourself, here. Never hand work to Orbiter and never suggest it unless the user asks for Orbiter by name in their message; only then call orbiter_handoff with the full task and everything you already know.`}
+- If the user ever says not to use Orbiter, that holds for the rest of the conversation.
 - Orbit's model line: Spark (fast, cheap), Pulse (balanced), Surge (strongest). Each is an alias the user maps to any provider's model in Settings.
 ${this.orbiter ? '- Orbiter right now:\n' + this.orbiter.statusText().split('\n').slice(0, 6).join('\n') : ''}
 
@@ -833,7 +906,7 @@ ${files}`;
     if (err.network) return true;
     if (err.name === 'AbortError') return false;
     const m = String(err.message || '');
-    if (err.status) return [401, 402, 403, 404, 408, 409, 413, 429].includes(err.status) || err.status >= 500 || /quota|rate.?limit|limit|exceed|insufficient|credit|billing|overload|capacity|unavailable|not found|does not exist/i.test(m);
+    if (err.status) return [401, 402, 403, 404, 408, 409, 429].includes(err.status) || err.status >= 500 || /quota|rate.?limit|limit|exceed|insufficient|credit|billing|overload|capacity|unavailable|not found|does not exist/i.test(m);
     return /fetch failed|ECONN|ETIMEDOUT|ENOTFOUND|socket|network|terminated/i.test(m);
   }
   // Gemini's OpenAI-compatible API rejects an OBJECT schema with no properties (HTTP 400),
@@ -899,11 +972,19 @@ ${files}`;
     const noEff = this._noEffort || (this._noEffort = new Set());
     if (s._effort && s._effort !== 'default' && !noEff.has(effKey)) body.reasoning_effort = s._effort === 'quick' ? 'low' : 'high';
     const t0 = Date.now(); let tFirst = 0;
+    // Providers cap the request size (often 8 MB). Images and huge tool dumps are what blow it.
+    let raw = JSON.stringify(body);
+    if (raw.length > Agent.BODY_LIMIT) { body.messages = Agent.fitMessages(body.messages, Agent.BODY_LIMIT - (raw.length - JSON.stringify(body.messages).length)); raw = JSON.stringify(body); }
     let r;
-    try { r = await fetch(this._url(s, '/chat/completions'), { method: 'POST', headers: this._headers(s), body: JSON.stringify(body), signal: ctl.signal }); }
+    try { r = await fetch(this._url(s, '/chat/completions'), { method: 'POST', headers: this._headers(s), body: raw, signal: ctl.signal }); }
     catch (e) { if (e.name === 'AbortError' || ctl.signal.aborted) throw e; throw Agent._netError(e, s); }
     if (!r.ok) {
       const errText = await r.text();
+      // Too big for this provider: drop every image and squeeze old output, then try once more.
+      if ((r.status === 413 || /request_too_large|too large|payload too large/i.test(errText)) && !messages._fitted) {
+        const small = Agent.fitMessages(messages, Math.min(Agent.BODY_LIMIT, Math.floor(raw.length / 3)), { noImages: true }); small._fitted = true;
+        return this._complete(s, small, msgId, streamToUI, withUsage, ctl, schemas, emit);
+      }
       if (withUsage && r.status === 400 && /stream_options|include_usage/i.test(errText)) return this._complete(s, messages, msgId, streamToUI, false, ctl, schemas, emit);
       if (body.reasoning_effort && (r.status === 400 || r.status === 422)) { noEff.add(effKey); return this._complete(s, messages, msgId, streamToUI, withUsage, ctl, schemas, emit); }
       if (Agent._flipGoogleAuth(s, r.status, errText)) return this._complete(s, messages, msgId, streamToUI, withUsage, ctl, schemas, emit);
@@ -968,22 +1049,27 @@ ${files}`;
     const s = this.store.getSettings();
     if (s.approvalMode === 'never') return Promise.resolve(true);
     const id = uid();
-    this.emit({ type: 'approval', id, title, detail, lane, ...projOf(lane) });
+    const ev = { type: 'approval', id, title, detail, lane, ...projOf(lane) };
+    this.emit(ev); (this.openAsks || (this.openAsks = new Map())).set(id, ev);
     this.pendingKind.set(id, 'approval');
     (this.pendingLane || (this.pendingLane = new Map())).set(id, lane);
     this.reachOut('Orbit needs your OK', `${title}\n${String(detail || '').slice(0, 300)}`, { kind: 'approval', id, choices: ['Approve', 'Deny'] });
     return new Promise((resolve) => this.pending.set(id, (v) => {
+      this.openAsks && this.openAsks.delete(id);
       this.emit({ type: 'approval_done', id, approved: !!v.approved, lane, ...projOf(lane) });
       resolve(!!v.approved);
     }));
   }
+  pendingAsks(lane) { return [...(this.openAsks || new Map()).values()].filter(e => !lane || e.lane === lane); }
   askUser(question, choices, lane = 'main') {
     const id = uid();
-    this.emit({ type: 'question', id, question, choices: choices || [], lane, ...projOf(lane) });
+    const ev = { type: 'question', id, question, choices: choices || [], lane, ...projOf(lane) };
+    this.emit(ev); (this.openAsks || (this.openAsks = new Map())).set(id, ev);
     this.pendingKind.set(id, 'question');
     (this.pendingLane || (this.pendingLane = new Map())).set(id, lane);
     this.reachOut('Orbit has a question', question, { kind: 'question', id, choices: choices || [] });
     return new Promise((resolve) => this.pending.set(id, (v) => {
+      this.openAsks && this.openAsks.delete(id);
       this.emit({ type: 'question_done', id, answer: v.answer, lane, ...projOf(lane) });
       resolve(v.answer);
     }));

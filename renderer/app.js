@@ -36,6 +36,15 @@
     const t = $('#toast'); t.textContent = text; t.classList.add('show');
     clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), 2400);
   }
+  // Orbiter is waiting on an answer while the user looks elsewhere: say so, with a way there.
+  function orbAsk(e) {
+    let b = $('#orbAsk');
+    if (!b) { b = document.createElement('div'); b.id = 'orbAsk'; document.body.appendChild(b); }
+    b.innerHTML = `<span class="oa-dot"></span><span class="oa-t"><b>${escapeHtml(e.name || 'Orbiter')} is asking you</b><span>${escapeHtml(String(e.text || '').slice(0, 140))}</span></span><button class="primary sm" data-go>Answer</button><button class="ghost sm" data-x>×</button>`;
+    b.classList.add('show');
+    b.querySelector('[data-x]').onclick = () => b.classList.remove('show');
+    b.querySelector('[data-go]').onclick = () => { b.classList.remove('show'); api.openOrbiter(e.session); };
+  }
   function scrollDown(force) {
     const sc = $('#scroller');
     const near = sc.scrollHeight - sc.scrollTop - sc.clientHeight < 220;
@@ -59,14 +68,46 @@
   }
 
   // ---------- message rendering ----------
-  function addUser(text, images, via) {
+  function addUser(text, images, via, id) {
     hideWelcome();
     const el = document.createElement('div');
     el.className = 'msg user';
-    el.innerHTML = `<div>${images && images.length ? `<div class="imgs">${images.map(u => `<img src="${u}">`).join('')}</div>` : ''}${text ? `<div class="bubble">${escapeHtml(text)}</div>` : ''}${via ? `<div class="via">${via === 'voice' ? 'said on a live call' : `from your phone · ${via}`}</div>` : ''}</div>`;
+    el.innerHTML = `<div>${images && images.length ? `<div class="imgs">${images.map(u => `<img src="${u}">`).join('')}</div>` : ''}${text ? `<div class="bubble">${escapeHtml(text)}</div>` : ''}${via ? `<div class="via">${via === 'voice' ? 'said on a live call' : `from your phone · ${via}`}</div>` : ''}${id && text ? '<div class="u-tools"><button class="u-edit" title="Edit and resend"><svg viewBox="0 0 16 16"><path d="M3 13h3l7-7-3-3-7 7z"/></svg>Edit</button></div>' : ''}</div>`;
+    const eb = el.querySelector('.u-edit'); if (eb) eb.onclick = () => editUser(el, text, id);
     $('#messages').appendChild(el);
     scrollDown(true);
   }
+  // Edit an earlier message: everything after it is replaced by the new answer.
+  function editUser(el, text, id) {
+    if (el.classList.contains('editing')) return;
+    el.classList.add('editing');
+    const box = document.createElement('div'); box.className = 'u-editbox';
+    box.innerHTML = `<textarea rows="3"></textarea><div class="u-editbar"><span>Orbit redoes its answer from here.</span><button class="ghost sm" data-x>Cancel</button><button class="primary sm" data-ok>Save and send</button></div>`;
+    const ta = box.querySelector('textarea'); ta.value = text;
+    const bubble = el.querySelector('.bubble'); bubble.after(box); bubble.hidden = true;
+    ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+    const close = () => { box.remove(); bubble.hidden = false; el.classList.remove('editing'); };
+    box.querySelector('[data-x]').onclick = close;
+    const ok = async () => {
+      const v = ta.value.trim(); if (!v) return; if (v === text) return close();
+      box.querySelector('[data-ok]').disabled = true;
+      const r = await api.editMessage(scope, id, v);
+      if (!r || !r.ok) { toast((r && r.error) || "Couldn't edit that message."); close(); }
+    };
+    box.querySelector('[data-ok]').onclick = ok;
+    ta.onkeydown = (ev) => { if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); ok(); } else if (ev.key === 'Escape') close(); };
+  }
+  // A longer answer shown in the chat: collapsed to its headline, expands in place.
+  function reportCard(r) {
+    const el = document.createElement('div');
+    el.className = 'report-card';
+    el.innerHTML = `<button class="rc-head"><span class="rc-ic"><svg viewBox="0 0 16 16"><path d="M4 2.5h8v11H4zM6 6h4M6 8.5h4M6 11h2"/></svg></span><span class="rc-t"><b>${escapeHtml(r.title || 'Report')}</b>${r.summary ? `<span>${escapeHtml(r.summary)}</span>` : ''}</span><span class="rc-chev"><svg viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></svg></span></button><div class="rc-body"><div class="rc-in"><div class="md"></div><div class="rc-actions"><button class="ghost sm" data-copy>Copy</button></div></div></div>`;
+    const mdEl = el.querySelector('.rc-body .md'); mdEl.innerHTML = md(r.markdown || ''); wireCode(mdEl);
+    el.querySelector('.rc-head').onclick = () => { el.classList.toggle('open'); };
+    el.querySelector('[data-copy]').onclick = () => { navigator.clipboard.writeText(r.markdown || ''); toast('Copied'); };
+    return el;
+  }
+  const reportFromText = (t) => { const m = String(t || '').match(/<!--orbit-report ([\s\S]*?)-->/); if (!m) return null; try { return JSON.parse(m[1]); } catch { return null; } };
   function newTurn(tag) {
     hideWelcome();
     const el = document.createElement('div');
@@ -158,6 +199,9 @@
   api.on('agent:event', (e) => {
     if (e.type === 'model_switch') { toast(e.reason === 'picked' ? `Now using ${e.model}. The task carries on from where it was.` : `${e.from} isn't answering right now, so Orbit switched to ${e.model}.`); return; }
     if (e.type === 'models_changed') { paintModelChip(); return; }
+    if (e.type === 'thread_reset') { if (e.scope === scope) openScope(scope); return; }
+    if (e.type === 'orbiter_answered') { $('#orbAsk')?.classList.remove('show'); return; }
+    if (e.type === 'orbiter_needs_you') { const pf = document.getElementById('projOrbiter'); const inOrb = document.querySelector('#view-orbiter.active') || (e.project && scope === e.project && pf && pf.offsetParent && document.querySelector('#view-chat.active')); if (!inOrb) orbAsk(e); return; }
     if (e.type === 'stream_reset') { const sg = segs.get(e.id); if (sg) { sg.el.remove(); segs.delete(e.id); } return; }
     if (e.type === 'approval' || e.type === 'question') pendingCards.set(e.id, { scope: e.project || 'main', e });
     if (e.type === 'approval_done' || e.type === 'question_done') pendingCards.delete(e.id);
@@ -184,7 +228,7 @@
       if (['done', 'failed', 'stopped'].includes(e.state)) { if (turn) $('.thinking', turn)?.remove(); laneTurns.delete(lane); turn = saved; if (e.state !== 'stopped') setTimeout(() => { workers.delete(e.id); renderTray(); }, 400); else workers.delete(e.id); renderTray(); return; }
       renderTray();
     } else if (e.type === 'user_message') {
-      addUser(e.text, e.images, e.via); turn = newTurn(e.worker ? `${e.via === 'voice' ? 'From your call' : 'Background'} · ${e.worker}` : (e.side ? 'Quick answer while I work' : ''));
+      addUser(e.text, e.images, e.via, e.side ? null : e.id); turn = newTurn(e.worker ? `${e.via === 'voice' ? 'From your call' : 'Background'} · ${e.worker}` : (e.side ? 'Quick reply · your task keeps running' : ''));
     } else if (e.type === 'lane_done') {
       if (turn) $('.thinking', turn)?.remove(); laneTurns.delete(lane); turn = saved; return;
     } else handleEvent(e);
@@ -194,7 +238,7 @@
   function handleEvent(e) {
     switch (e.type) {
       case 'busy': setBusy(e.busy); break;
-      case 'user_message': addUser(e.text, e.images, e.via); turn = newTurn(); break;
+      case 'user_message': addUser(e.text, e.images, e.via, e.id); turn = newTurn(); break;
       case 'proactive_start': turn = newTurn(e.task.name); break;
       case 'proactive_quiet': if (turn) { turn.remove(); turn = null; } break;
       case 'assistant_start': {
@@ -239,6 +283,7 @@
         s.det.textContent += '\n\n→ ' + e.preview;
         if (e.image) { const img = document.createElement('img'); img.className = 'step-shot'; img.src = e.image; s.det.after(img); }
         if (e.file) { placeBeforeThinking(fileCard(e.file)); scrollDown(true); }
+        if (e.report) { placeBeforeThinking(reportCard(e.report)); scrollDown(true); }
         break;
       }
       case 'approval': {
@@ -415,6 +460,7 @@
     if (view === 'memory') loadMemory();
     if (view === 'settings') loadSettings();
     if (view === 'chat') { setTimeout(() => input.focus(), 50); paintModelChip(); }
+    if (view === 'orbiter') $('#orbAsk')?.classList.remove('show');
     if (view === 'orbiter') { orbFrame($('#orbiterFrame'), 'orbiter.html'); setTimeout(() => { try { $('#orbiterFrame').contentWindow.postMessage({ type: 'focus' }, '*'); } catch {} }, 80); }
   }
   $$('.rail-btn').forEach(b => b.onclick = () => show(b.dataset.view, b.dataset.view === 'chat' ? { scope: 'main' } : {}));
@@ -426,6 +472,7 @@
   }
   window.orbFrame = orbFrame;
   api.on('ui:orbiter', async (d) => {
+    $('#orbAsk')?.classList.remove('show');
     if (d && d.project) { await openScope(d.project); show('chat'); window.dispatchEvent(new CustomEvent('orbit-proj-mode', { detail: { mode: 'orbiter', session: d.session } })); return; }
     show('orbiter'); orbFrame($('#orbiterFrame'), 'orbiter.html', d && d.session);
   });
@@ -473,7 +520,9 @@
     for (const m of thread) {
       if (m.role === 'user') {
         const imgs = Array.isArray(m.content) ? m.content.filter(p => p.type === 'image_url').map(p => p.image_url.url) : [];
-        addUser(msgText(m), imgs, m.via);
+        addUser(msgText(m), imgs, m.via, m.side ? null : m.id);
+      } else if (m.role === 'tool' && reportFromText(m.content)) {
+        const el = newTurn(); $('.thinking', el).remove(); $('.body', el).appendChild(reportCard(reportFromText(m.content)));
       } else if (m.role === 'tool' && fileFromText(m.content)) {
         const el = newTurn(); $('.thinking', el).remove(); $('.body', el).appendChild(fileCard(fileFromText(m.content)));
       } else if (m.role === 'assistant' && m.content) addAssistantStatic(m.content, m.proactive || (m.worker ? `Background · ${m.worker}` : ''));
@@ -565,7 +614,7 @@
   $('#openMemFolder').onclick = () => api.openMemoryFolder();
 
   // ---------- settings ----------
-  const FIELDS = ['orbitVoice', 'orbitStt', 'orbitTts', 'orbitPhononVoice', 'orbitWinVoice', 'orbitPauseMs', 'liveEngine', 'liveGeminiVoice', 'liveOpenaiVoice', 'baseUrl', 'model', 'fastModel', 'voiceModel', 'browserChannel', 'phoneWhen', 'phoneIdleMinutes', 'ntfyServer', 'transcribeModel', 'userName', 'approvalMode', 'dailyTokenCap', 'contextBudget', 'maxSteps', 'chatThinking', 'orbiterThinking', 'hotkey', 'maxWorkers', 'imageModel', 'imageBaseUrl', 'googleClientId', 'visionModel'];
+  const FIELDS = ['orbitVoice', 'orbitStt', 'orbitTts', 'orbitPhononVoice', 'orbitWinVoice', 'orbitPauseMs', 'liveEngine', 'liveGeminiVoice', 'liveOpenaiVoice', 'baseUrl', 'model', 'fastModel', 'voiceModel', 'browserChannel', 'phoneWhen', 'phoneIdleMinutes', 'ntfyServer', 'transcribeModel', 'userName', 'approvalMode', 'dailyTokenCap', 'contextBudget', 'maxSteps', 'chatThinking', 'orbiterThinking', 'orbiterHandoffMode', 'hotkey', 'maxWorkers', 'imageModel', 'imageBaseUrl', 'googleClientId', 'visionModel'];
   const TOGGLES = ['autoUpdate', 'talkFirst', 'autoCall', 'orbitGpu', 'wakeOpensLive', 'voiceReplies', 'closeToTray', 'startWithWindows', 'wakeWord', 'ntfyEnabled', 'telegramEnabled', 'osintBeta'];
   // Edits you haven't saved yet survive any refresh of this screen (a new ntfy topic,
   // Telegram pairing, Google connect...). Before, those refreshes wiped the whole form.

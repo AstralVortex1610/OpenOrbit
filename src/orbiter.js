@@ -69,7 +69,7 @@ class Orbiter {
   // ----- sessions -----
   _index() { try { return JSON.parse(fs.readFileSync(path.join(this.dir, 'sessions.json'), 'utf8')); } catch { return []; } }
   _saveIndex(l) { fs.writeFileSync(path.join(this.dir, 'sessions.json'), JSON.stringify(l, null, 2)); }
-  sessions() { return this._index().sort((a, b) => (b.updated || 0) - (a.updated || 0)).map(s => ({ ...s, busy: this.busy.has(s.id), step: (this.busy.get(s.id) || {}).step || '' })); }
+  sessions() { return this._index().sort((a, b) => (b.updated || 0) - (a.updated || 0)).map(s => ({ ...s, busy: this.busy.has(s.id), step: (this.busy.get(s.id) || {}).step || '', started: (this.busy.get(s.id) || {}).started || 0 })); }
   session(id) { return this._index().find(s => s.id === id) || null; }
   createSession({ folder, name, tier, mode, projectId } = {}) {
     const s = this.store.getSettings();
@@ -291,7 +291,7 @@ ${mem ? '\nProject and user memory (follow it):\n' + mem : ''}${todos}`; // todo
         pick: () => { const t = this.tierSettings((this.session(id) || sess).tier); return { settings: t.settings, model: t.model }; },
         system: () => this._system(this.session(id) || sess),
         context: () => this.agent._contextMessages(this.thread(id), 120, (Number(this.store.getSettings().contextBudget) || 24000) * 2, 'orb-' + id),
-        append: (m) => { const t = this.thread(id); t.push({ ...m, ui: m.role === 'assistant' ? true : m.ui }); this.saveThread(id, t); },
+        append: (m) => { const t = this.thread(id); t.push({ ...m, ui: m.role === 'assistant' && !m.retracted ? true : m.ui }); this.saveThread(id, t); },
         tools, schemas: SCHEMAS,
         onStep: (label) => { this.busy.set(id, { ...(this.busy.get(id) || {}), step: label }); emit({ type: 'orbiter_step', label }); },
       });

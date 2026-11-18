@@ -67,6 +67,10 @@ const DEFAULT_SETTINGS = {
   orbiterLastFolder: '',
   orbiterAllow: [], // command prefixes Orbiter may run without asking
   orbiterHandoff: true, // (old, unused since 0.12.4)
+  sandboxOn: false, // run Orbit's work in its own Linux (WSL2) instead of on this PC
+  sandboxRamGb: 4,
+  sandboxShares: [], // [{ path, mode: read | ask | full }]
+  sandboxCleanedAt: 0,
   orbiterHandoffMode: 'off', // off: only when the user asks for Orbiter by name | suggest: may offer, hands off only after a yes
 };
 const LIST_KEYS = new Set(['backupModels', 'mcpServers', 'apiConnectors', 'modelTiers']);

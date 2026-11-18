@@ -14,7 +14,11 @@ const TOOL_SCHEMAS = [
     command: { type: 'string', description: 'The command to run.' },
     cwd: { type: 'string', description: 'Working directory. Defaults to the user home folder.' },
     timeout_sec: { type: 'number', description: 'Max seconds before it is stopped (default 120).' },
+    where: { type: 'string', enum: ['sandbox', 'windows'], description: 'Only when the sandbox is on: sandbox (default, bash in Orbit\'s own Linux) or windows (PowerShell on the real PC, the user approves it).' },
   }, ['command']),
+  fn('sandbox_share', 'Sandbox only: ask the user to let the sandbox use a folder or drive on their PC (e.g. D:\\Projects, or E:\\ for a pen drive they just plugged in). mode: read (look only), ask (look, and you copy changes back with sandbox_apply after they approve), full (edit in place). Returns the path inside the sandbox.', { path: { type: 'string' }, mode: { type: 'string', enum: ['read', 'ask', 'full'] }, why: { type: 'string', description: 'One short line on why you need it.' } }, ['path', 'mode']),
+  fn('sandbox_apply', 'Sandbox only: copy a file or folder you made in the sandbox to the user\'s real PC (into a shared folder or anywhere they approve). from: a sandbox path like /home/orbit/work/out.pdf; to: a Windows path like E:\\out.pdf.', { from: { type: 'string' }, to: { type: 'string' } }, ['from', 'to']),
+  fn('sandbox_cleanup', 'Sandbox only: clear old scratch files, caches and temp files to keep the sandbox small. Never touches shared folders.', {}),
   fn('read_file', 'Read a text file from disk.', { path: { type: 'string' } }, ['path']),
   fn('write_file', 'Create or overwrite a text file. Relative paths go in Orbit\'s working folder.', { path: { type: 'string' }, content: { type: 'string' } }, ['path', 'content']),
   fn('list_dir', 'List a folder\'s contents with sizes.', { path: { type: 'string' } }, ['path']),
@@ -175,7 +179,9 @@ const { buildOsint, OSINT_SCHEMAS } = require('./osint');
 // Orbit's own tools plus whatever is switched on: Osint (beta) and the user's connectors.
 function allSchemas(agent) {
   const s = agent.store.getSettings();
-  return [...TOOL_SCHEMAS, ...(s.osintBeta ? OSINT_SCHEMAS : []), ...(agent.connectors ? agent.connectors.schemas() : [])];
+  const sbReady = !!(s.sandboxOn && agent.sandbox && agent.sandbox.lastStatus && agent.sandbox.lastStatus.state === 'ready');
+  const base = sbReady ? TOOL_SCHEMAS : TOOL_SCHEMAS.filter(t => !/^sandbox_/.test(t.function.name));
+  return [...base, ...(s.osintBeta ? OSINT_SCHEMAS : []), ...(agent.connectors ? agent.connectors.schemas() : [])];
 }
 const { WinUI } = require('./winui');
 
@@ -189,6 +195,23 @@ function buildTools(agent, lane = { id: 'main' }) {
   // There is one mouse and keyboard: desktop control from parallel tasks takes turns.
   const ui = (fn) => (...a) => { const run = (agent._uiLock || Promise.resolve()).then(() => fn(...a)); agent._uiLock = run.catch(() => {}); return run; };
   let shotMap = null; // screenshot pixel -> physical screen pixel
+  const sb = agent.sandbox;
+  const sbOn = () => !!(sb && sb.on && sb.lastStatus && sb.lastStatus.state === 'ready');
+  // Paths: a Linux path (/home/orbit/…) is a file in the sandbox. With the sandbox on, the real PC is
+  // off limits except Orbit's own folders and shared folders (writes only in Full access ones).
+  // On Windows any /path is a sandbox path; elsewhere (tests) only the sandbox's own folders are.
+  const isLinuxPath = (p) => (process.platform === 'win32' ? /^\//.test(String(p || '')) : /^\/(home\/orbit|mnt\/win)(\/|$)/.test(String(p || '')));
+  const resolvePath = async (p, base, write) => {
+    if (sbOn() && isLinuxPath(p)) return { full: sb.constructor.toUNC(String(p)), sandbox: true };
+    const full = expand(p, base);
+    if (!sbOn()) return { full };
+    const own = full.startsWith(store.workDir) || (agent.hub && full.startsWith(agent.hub.dir)) || full.startsWith(store.dir);
+    const share = sb.shareFor(full);
+    if (own || (share && (!write || share.mode === 'full'))) return { full, fullShare: !!(share && share.mode === 'full') };
+    const ok = await agent.requestApproval(lane.id, write ? 'Let Orbit change this file on your PC?' : 'Let Orbit read this from your PC?', `${full}\n\nIt isn't in a folder you've shared with the sandbox.`);
+    if (!ok) throw new Error(`The user didn't allow ${write ? 'changing' : 'reading'} ${full}. Ask them to share the folder (sandbox_share) or do it another way.`);
+    return { full, approved: true };
+  };
   const needApproval = (risky) => {
     const mode = store.getSettings().approvalMode;
     if (mode === 'never') return false;
@@ -236,11 +259,22 @@ function buildTools(agent, lane = { id: 'main' }) {
       return (lines.join('\n') || 'No connectors yet.') + `\nGoogle (Gmail, Calendar): ${agent.google && agent.google.connected() ? 'connected' : 'not connected'}. The user adds connectors in the Connectors screen.`;
     },
     ...buildOsint({ agent, store, lane, browser }),
-    async run_command({ command, cwd, timeout_sec }) {
+    async run_command({ command, cwd, timeout_sec, where }) {
       if (!command) throw new Error('No command given.');
       if (needApproval(RISKY.test(command))) {
         const ok = await agent.requestApproval(lane.id, 'Run this command?', command);
         if (!ok) return 'The user declined to run this command. Ask what they would like instead.';
+      }
+      if (sbOn() && where !== 'windows') {
+        let dir = cwd && !isLinuxPath(cwd) ? sb.toSandbox(expand(cwd, os.homedir())) : cwd;
+        if (!dir) { dir = sb.scratchFor(lane.id); await sb.wsl(['-d', 'orbit', '--', 'mkdir', '-p', dir], { timeout: 20000 }); }
+        const r = await sb.run(command, { cwd: dir, timeout: Math.min(Number(timeout_sec) || 120, 1800) * 1000 });
+        let out = r.out; if (out.length > 12000) out = out.slice(0, 6000) + '\n…[output trimmed]…\n' + out.slice(-5000);
+        return `exit code ${r.code} (sandbox, in ${dir})\n${out.trim() || '(no output)'}`;
+      }
+      if (sbOn() && where === 'windows' && store.getSettings().approvalMode !== 'never') {
+        const ok = await agent.requestApproval(lane.id, 'Run this on your Windows PC?', command);
+        if (!ok) return 'The user declined to run this on Windows. Do it in the sandbox, or ask what they want instead.';
       }
       const isWin = process.platform === 'win32';
       const shellCmd = isWin ? 'powershell.exe' : 'bash';
@@ -263,17 +297,17 @@ function buildTools(agent, lane = { id: 'main' }) {
     },
 
     async read_file({ path: p }) {
-      const full = expand(p, store.workDir);
+      const { full } = await resolvePath(p, store.workDir, false);
       const stat = fs.statSync(full);
       if (stat.size > 2_000_000) return `Error: file is ${Math.round(stat.size / 1e6)} MB, too big to read whole.`;
       return fs.readFileSync(full, 'utf8');
     },
 
     async write_file({ path: p, content }) {
-      const full = expand(p, store.workDir);
-      const inside = full.startsWith(store.workDir) || (agent.hub && full.startsWith(agent.hub.dir));
+      const rp = await resolvePath(p, store.workDir, true); const full = rp.full;
+      const inside = rp.sandbox || rp.approved || full.startsWith(store.workDir) || (agent.hub && full.startsWith(agent.hub.dir));
       const exists = fs.existsSync(full);
-      if (needApproval(exists || !inside)) {
+      if (!rp.sandbox && !rp.approved && !rp.fullShare && needApproval(exists || !inside)) {
         const ok = await agent.requestApproval(lane.id, exists ? 'Overwrite this file?' : 'Create this file?', `${full}\n\n${String(content).slice(0, 400)}${String(content).length > 400 ? '…' : ''}`);
         if (!ok) return 'The user declined. The file was not written.';
       }
@@ -282,8 +316,40 @@ function buildTools(agent, lane = { id: 'main' }) {
       return `Saved ${full} (${Buffer.byteLength(content)} bytes).`;
     },
 
+    async sandbox_share({ path: p, mode = 'read', why }) {
+      if (!sbOn()) return 'The sandbox is off or not set up. Work on the PC directly, or ask the user to turn it on in Settings → Sandbox.';
+      const full = path.resolve(expand(p, os.homedir()));
+      if (!fs.existsSync(full)) return `${full} doesn't exist. If it's a pen drive, ask the user which drive letter it got.`;
+      const names = { read: 'read only', ask: 'look, and copy changes back after you approve', full: 'full access (it can change and delete files there)' };
+      const ok = await agent.requestApproval(lane.id, `Share ${full} with the sandbox?`, `${names[mode] || names.read}${why ? '\n\n' + why : ''}`);
+      if (!ok) return 'The user said no. Do not share it.';
+      const at = await sb.share(full, mode);
+      return `Shared. In the sandbox it is ${at} (${names[mode] || names.read}).`;
+    },
+
+    async sandbox_apply({ from, to }) {
+      if (!sbOn()) return 'The sandbox is off.';
+      const src = sb.constructor.toUNC(from); const dest = path.resolve(expand(to, os.homedir()));
+      if (!fs.existsSync(src)) return `Nothing at ${from} in the sandbox.`;
+      const share = sb.shareFor(dest);
+      if (!(share && share.mode === 'full') && store.getSettings().approvalMode !== 'never') {
+        const st = fs.statSync(src); const what = st.isDirectory() ? 'folder' : `${Math.max(1, Math.round(st.size / 1024))} KB file`;
+        const ok = await agent.requestApproval(lane.id, 'Copy this to your PC?', `${from}  →  ${dest}\n(${what}${fs.existsSync(dest) ? ', replaces the one there' : ''})`);
+        if (!ok) return 'The user declined. Nothing was copied.';
+      }
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.cpSync(src, dest, { recursive: true, force: true });
+      return `Copied to ${dest}.`;
+    },
+
+    async sandbox_cleanup() {
+      if (!sbOn()) return 'The sandbox is off.';
+      const freed = await sb.cleanup();
+      return `Cleaned up. ${freed} MB freed.`;
+    },
+
     async list_dir({ path: p }) {
-      const full = expand(p, os.homedir());
+      const { full } = await resolvePath(p, os.homedir(), false);
       const items = fs.readdirSync(full, { withFileTypes: true }).slice(0, 300).map(d => {
         let size = '';
         try { if (d.isFile()) size = ` ${Math.round(fs.statSync(path.join(full, d.name)).size / 1024)} KB`; } catch {}

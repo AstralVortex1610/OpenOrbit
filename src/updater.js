@@ -8,6 +8,12 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 const REPO = 'AstralVortex1610/OpenOrbit';
+// Electron's own network stack (system proxy, Windows certificates). Plain Node fetch failed on some
+// PCs with "fetch failed", which silently stopped every automatic check.
+function netFetch(url, opts) {
+  try { const { net } = require('electron'); if (net && typeof net.fetch === 'function') return net.fetch(url, opts).catch(() => fetch(url, opts)); } catch {}
+  return fetch(url, opts);
+}
 
 function parse(v) { return String(v || '').replace(/^v/i, '').split('-')[0].split('.').map(n => parseInt(n, 10) || 0); }
 function newer(a, b) { const x = parse(a), y = parse(b); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); } return false; }
@@ -89,6 +95,7 @@ class Updater {
       this.state.lastFailure = this.state.error;
     } else this.state = { ...this.state, status: 'updated', justUpdated: pend.from };
   }
+  _log(m) { try { fs.appendFileSync(path.join(this.app.getPath('userData'), 'update.log'), `${new Date().toISOString()} [auto] ${m}\r\n`); } catch {} }
   _set(patch) { this.state = { ...this.state, ...patch }; this.send('update:state', this.state); return this.state; }
 
   // Automatic updates: check soon after launch and every hour; when a new version is out,
@@ -97,14 +104,29 @@ class Updater {
     clearInterval(this.timer); this.timer = null; clearTimeout(this._first);
     this.auto = !!enabled;
     if (!enabled) return;
-    const run = () => this.autoStep().catch(() => {});
+    // A failed check retries soon (2, 5, 15, 30 min) instead of waiting a whole hour; then hourly.
+    const backoff = [2, 5, 15, 30].map(m => m * 60 * 1000); let fails = 0;
+    const run = async () => {
+      clearTimeout(this._retry);
+      let st; try { st = await this.autoStep(); } catch (e) { st = { status: 'error', error: e.message }; }
+      if (this.auto && st && st._checkFailed) { const wait = backoff[Math.min(fails++, backoff.length - 1)]; this._log(`check failed (${st._checkFailed}), retrying in ${wait / 60000} min`); this._retry = setTimeout(run, wait); }
+      else fails = 0;
+    };
+    this._run = run;
     this._first = setTimeout(run, 10000);
     this.timer = setInterval(run, 60 * 60 * 1000);
+    if (!this._resumeHooked) { this._resumeHooked = true; try { require('electron').powerMonitor.on('resume', () => { if (this.auto) setTimeout(() => this._run && this._run(), 15000); }); } catch {} }
   }
   async autoStep() {
     if (!this.auto || ['downloading', 'installing', 'ready'].includes(this.state.status)) return this.state;
     const st = await this.check(true);
-    if (st.status === 'available' && process.platform === 'win32' && this.app.isPackaged) await this.download(true);
+    if (st._checkFailed) return st;
+    if (st.status === 'available') this._log(`found ${st.latest} (on ${this.state.current})`);
+    if (st.status === 'available' && process.platform === 'win32' && this.app.isPackaged) {
+      const d = await this.download(true);
+      this._log(d.status === 'ready' ? `downloaded ${st.latest}, installs when idle` : `download failed: ${d.error}`);
+      if (d.status !== 'ready') return { ...this.state, _checkFailed: d.error || 'download failed' };
+    }
     if (this.state.status === 'ready' && this.onReady) this.onReady(this.state);
     return this.state;
   }
@@ -113,7 +135,7 @@ class Updater {
     if (this.state.status === 'downloading' || this.state.status === 'installing') return this.state;
     if (!quiet) this._set({ status: 'checking', error: '' });
     try {
-      const r = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Orbit-Updater' } });
+      const r = await netFetch(`https://api.github.com/repos/${REPO}/releases/latest`, { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Orbit-Updater' } });
       if (!r.ok) throw new Error(`GitHub answered ${r.status}`);
       const rel = await r.json();
       const asset = (rel.assets || []).find(a => /win\.zip$/i.test(a.name));
@@ -121,7 +143,7 @@ class Updater {
       if (!asset || !newer(latest, this.state.current)) return this._set({ status: 'latest', latest, checkedAt: Date.now(), error: '' });
       return this._set({ status: 'available', latest, notes: String(rel.body || '').slice(0, 1500), url: asset.browser_download_url, size: asset.size, page: rel.html_url, checkedAt: Date.now(), error: '' });
     } catch (e) {
-      if (quiet) return this.state;
+      if (quiet) return { ...this.state, _checkFailed: e.message };
       return this._set({ status: 'error', error: `Couldn't check for updates: ${e.message}` });
     }
   }
@@ -144,12 +166,13 @@ class Updater {
     const zip = path.join(work, 'Orbit.zip');
     this._set({ status: 'downloading', progress: 0, error: '', background: !!quiet });
     try {
-      const r = await fetch(this.state.url, { headers: { 'User-Agent': 'Orbit-Updater' }, redirect: 'follow' });
+      const r = await netFetch(this.state.url, { headers: { 'User-Agent': 'Orbit-Updater' }, redirect: 'follow' });
       if (!r.ok) throw new Error(`download failed (${r.status})`);
       const total = Number(r.headers.get('content-length')) || this.state.size || 0;
       const out = fs.createWriteStream(zip);
       let got = 0, lastPct = -1;
-      for await (const chunk of r.body) {
+      for await (let chunk of r.body) {
+        chunk = Buffer.from(chunk);
         got += chunk.length;
         if (!out.write(chunk)) await new Promise(res => out.once('drain', res));
         const pct = total ? Math.floor((got / total) * 100) : 0;
@@ -178,7 +201,7 @@ class Updater {
     fs.writeFileSync(ps, applyScript({ zip, tmp: path.join(work, 'x'), dest, exe, log, want: this.state.latest, pid: process.pid, flag: applyingFlag(this.app), relaunch }), 'utf8');
     // remember what we expect, so the next launch can tell if the update really landed
     try { fs.writeFileSync(path.join(this.app.getPath('userData'), 'update-pending.json'), JSON.stringify({ want: this.state.latest, from: this.state.current, at: Date.now() })); } catch {}
-    this._set({ status: 'installing', progress: 100 });
+    this._set({ status: 'installing', progress: 100 }); this._log(`installing ${this.state.latest}`);
     const child = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', ps], { detached: true, stdio: 'ignore', windowsHide: true, cwd: work });
     child.unref();
     this._zip = null;

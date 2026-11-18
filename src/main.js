@@ -10,6 +10,8 @@ const { Live } = require('./live');
 const { VoiceCache } = require('./voice-cache');
 const { Updater, updateInProgress } = require('./updater');
 const { Orbiter, TIERS, MODES } = require('./orbiter');
+const { Sandbox } = require('./sandbox');
+const { Browser } = require('./browser');
 // Lets the on-device voice models use several CPU threads.
 app.commandLine.appendSwitch('enable-features', 'SharedArrayBuffer');
 
@@ -24,12 +26,13 @@ const updater = new Updater({ app, send: (c, p) => send(c, p) });
 // Quit for real so the update can replace the files: close windows, stop helpers, and force exit if anything hangs.
 // A background download finished: install now if Orbit is idle and you're not using it, else at the next idle moment or on quit.
 function orbitIdle() { return !agent.mainBusy && !(agent.stepCtls && agent.stepCtls.size) && !(agent.workers && agent.workers.size) && !(orbiter && orbiter.busy && orbiter.busy.size); }
-function userNotLooking() { let idle = 0; try { idle = powerMonitor.getSystemIdleTime(); } catch {} return !(win && win.isVisible() && win.isFocused()) || idle >= 300; }
+// Not using Orbit right now: its window is hidden, minimised, in the background, or the PC has been idle 3 min.
+function userNotLooking() { let idle = 0; try { idle = powerMonitor.getSystemIdleTime(); } catch {} return !(win && win.isVisible() && !win.isMinimized() && win.isFocused()) || idle >= 180; }
 updater.onReady = (st) => {
   send('agent:event', { type: 'notice', title: `Orbit ${st.latest} is ready`, text: 'It installs by itself when Orbit is idle, or now from Settings → Updates.' });
   clearInterval(updater._idleTimer);
   const tryNow = () => { if (updater.state.status !== 'ready') return clearInterval(updater._idleTimer); if (orbitIdle() && userNotLooking()) { clearInterval(updater._idleTimer); updater.apply(); } };
-  updater._idleTimer = setInterval(tryNow, 60 * 1000); tryNow();
+  updater._idleTimer = setInterval(tryNow, 30 * 1000); updater._tryNow = tryNow; tryNow();
 };
 updater.onQuit = () => { quitting = true; setTimeout(() => app.exit(0), 3000); try { app.quit(); } catch { app.exit(0); } };
 
@@ -156,6 +159,7 @@ function createWindow() {
   win.on('close', (e) => {
     if (!quitting && store.getSettings().closeToTray !== false) { e.preventDefault(); win.hide(); }
   });
+  for (const ev of ['hide', 'minimize', 'blur']) win.on(ev, () => setTimeout(() => updater._tryNow && updater._tryNow(), 2000));
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
 }
 
@@ -175,7 +179,9 @@ function createTray() {
 // ---------- IPC ----------
 ipcMain.handle('settings:get', () => store.getSettingsForUI());
 ipcMain.handle('settings:save', (_e, s) => {
+  const wasSb = !!store.getSettings().sandboxOn;
   store.saveSettings(s);
+  if (!!store.getSettings().sandboxOn !== wasSb) sandboxToggled();
   const cur = store.getSettings();
   app.setLoginItemSettings({ openAtLogin: !!cur.startWithWindows, args: ['--hidden'] });
   registerHotkey();
@@ -389,3 +395,38 @@ if (updateInProgress(app)) {
   app.on('will-quit', () => globalShortcut.unregisterAll());
   app.on('window-all-closed', (e) => { /* stay alive in tray */ });
 }
+
+
+// ---- Sandbox: Orbit's own computer, and the Computer panel that shows what it's doing ----
+const sandbox = new Sandbox({ store, app, emit: (e) => { send('agent:event', e); if (e.type === 'computer_log') computerLog.push(e), computerLog.length > 300 && computerLog.shift(); } });
+const computerLog = [];
+agent.sandbox = sandbox; Browser.sandbox = sandbox;
+function sandboxToggled() {
+  // the browser switches between the sandbox and this PC on its next use
+  if (agent.browser) agent.browser.close().catch(() => {});
+  if (store.getSettings().sandboxOn) sandbox.warm().catch(() => {}); else sandbox.stop();
+}
+app.whenReady().then(() => { setTimeout(() => { if (store.getSettings().sandboxOn) sandbox.warm().catch(() => {}); else sandbox.status().catch(() => {}); }, 4000); sandbox.scheduleCleanup(); });
+app.on('before-quit', () => sandbox.stop());
+ipcMain.handle('sandbox:status', async () => ({ ...(await sandbox.status()), on: !!store.getSettings().sandboxOn, shares: sandbox.shares(), ramGb: store.getSettings().sandboxRamGb || 4, cleanedAt: store.getSettings().sandboxCleanedAt || 0 }));
+ipcMain.handle('sandbox:setup', () => sandbox.setup());
+ipcMain.handle('sandbox:reset', async () => { const r = await dialog.showMessageBox(win, { type: 'warning', buttons: ['Reset', 'Cancel'], defaultId: 1, message: 'Reset Orbit\'s sandbox?', detail: 'Everything installed or saved inside the sandbox is wiped and set up fresh. Your shared folders and Windows files are not touched.' }); return r.response === 0 ? sandbox.reset() : sandbox.status(); });
+ipcMain.handle('sandbox:cleanup', () => sandbox.cleanup());
+ipcMain.handle('sandbox:share', async (_e, p, mode) => { if (!p) { const r = await dialog.showOpenDialog(win, { properties: ['openDirectory'], title: 'Share a folder or drive with the sandbox' }); if (r.canceled || !r.filePaths[0]) return null; p = r.filePaths[0]; } await sandbox.share(p, mode || 'read'); return sandbox.shares(); });
+ipcMain.handle('sandbox:unshare', async (_e, p) => { await sandbox.unshare(p); return sandbox.shares(); });
+
+// Computer panel: a live picture of the sandbox browser (CDP screencast) plus the command log.
+let cast = null;
+async function castStop() { const c = cast; cast = null; if (c) { clearInterval(c.poll); try { await c.cdp.send('Page.stopScreencast'); await c.cdp.detach(); } catch {} } }
+async function castAttach() {
+  const b = agent.browser; const page = b && b.page && !b.page.isClosed() ? b.page : null;
+  if (cast && cast.page === page) return;
+  if (cast) { try { await cast.cdp.send('Page.stopScreencast'); await cast.cdp.detach(); } catch {} cast.page = null; }
+  if (!page) { if (cast) cast.page = null; send('computer:frame', { idle: true }); return; }
+  const cdp = await page.context().newCDPSession(page);
+  cdp.on('Page.screencastFrame', (f) => { send('computer:frame', { data: f.data, url: page.url() }); cdp.send('Page.screencastFrameAck', { sessionId: f.sessionId }).catch(() => {}); });
+  await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 60, maxWidth: 1280, maxHeight: 800 });
+  cast = { ...(cast || {}), cdp, page };
+}
+ipcMain.handle('computer:start', async () => { await castStop(); cast = { page: undefined }; const tick = () => castAttach().catch(() => {}); cast.poll = setInterval(tick, 1000); await tick(); return { log: computerLog.slice(-120) }; });
+ipcMain.handle('computer:stop', () => castStop());

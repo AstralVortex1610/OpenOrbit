@@ -50,6 +50,20 @@ class Browser {
     if (this.ctx && this.page && !this.page.isClosed()) return this.page;
     if (this.ctx) { const pages = this.ctx.pages().filter(p => !p.isClosed() && !this.claimed.has(p)); if (pages.length) { this.page = pages[pages.length - 1]; return this.page; } }
     const { chromium } = require('playwright-core');
+    // Sandbox on: browse inside Orbit's own computer, with no window on the user's screen.
+    const sb = Browser.sandbox;
+    if (sb && sb.on) {
+      try {
+        const endpoint = await sb.browserEndpoint();
+        this.cdp = await chromium.connectOverCDP(endpoint);
+        this.ctx = this.cdp.contexts()[0] || await this.cdp.newContext();
+        this.cdp.on('disconnected', () => { this.ctx = null; this.page = null; this.cdp = null; });
+        this.ctx.on('page', p => { setTimeout(() => { if (!this.claimed.has(p)) this.page = p; }, 80); });
+        this.page = this.ctx.pages().find(p => !this.claimed.has(p)) || await this.ctx.newPage();
+        await this.page.setViewportSize({ width: 1366, height: 850 }).catch(() => {});
+        return this.page;
+      } catch (e) { this.ctx = null; this.hiddenFallback = String(e.message || e); }
+    }
     const profile = path.join(this.store.dir, 'browser-profile');
     fs.mkdirSync(profile, { recursive: true });
     const pref = this.store.getSettings().browserChannel || 'msedge';
@@ -57,7 +71,7 @@ class Browser {
     let lastErr;
     for (const channel of tries) {
       try {
-        const opts = { headless: process.env.ORBIT_HEADLESS === '1', viewport: null, args: ['--start-maximized', '--disable-blink-features=AutomationControlled'] };
+        const opts = { headless: process.env.ORBIT_HEADLESS === '1' || !!(sb && sb.on), viewport: null, args: ['--start-maximized', '--disable-blink-features=AutomationControlled'] };
         if (process.env.ORBIT_BROWSER_PATH) opts.executablePath = process.env.ORBIT_BROWSER_PATH;
         else if (channel !== 'chromium') opts.channel = channel;
         this.ctx = await chromium.launchPersistentContext(profile, opts);
@@ -170,7 +184,9 @@ class Browser {
 
   async close() {
     if (this.parent) { if (this.page && !this.page.isClosed()) await this.page.close().catch(() => {}); this.page = null; return 'Closed this task\'s tab.'; }
+    if (this.cdp) { for (const p of (this.ctx ? this.ctx.pages() : [])) await p.close().catch(() => {}); await this.cdp.close().catch(() => {}); this.cdp = null; this.ctx = null; this.page = null; return 'Browser tabs closed. Sign-ins are kept for next time.'; }
     if (this.ctx) await this.ctx.close().catch(() => {}); this.ctx = null; this.page = null; return 'Browser closed. Sign-ins are kept for next time.'; }
 }
 
+Browser.sandbox = null;
 module.exports = { Browser };

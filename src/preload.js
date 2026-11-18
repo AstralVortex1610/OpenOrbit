@@ -34,6 +34,8 @@ contextBridge.exposeInMainWorld('orbit', {
   files: { open: (p) => ipcRenderer.invoke('file:open', p), reveal: (p) => ipcRenderer.invoke('file:reveal', p), saveAs: (p) => ipcRenderer.invoke('file:saveAs', p) },
   passwords: { list: () => ipcRenderer.invoke('passwords:list'), save: (l) => ipcRenderer.invoke('passwords:save', l), remove: (id) => ipcRenderer.invoke('passwords:remove', id), reveal: (id) => ipcRenderer.invoke('passwords:reveal', id) },
   connectors: { status: () => ipcRenderer.invoke('connectors:status'), presets: () => ipcRenderer.invoke('connectors:presets'), save: (p) => ipcRenderer.invoke('connectors:save', p), restart: () => ipcRenderer.invoke('connectors:restart') },
+  sandbox: { status: () => ipcRenderer.invoke('sandbox:status'), setup: () => ipcRenderer.invoke('sandbox:setup'), reset: () => ipcRenderer.invoke('sandbox:reset'), cleanup: () => ipcRenderer.invoke('sandbox:cleanup'), share: (p, m) => ipcRenderer.invoke('sandbox:share', p, m), unshare: (p) => ipcRenderer.invoke('sandbox:unshare', p) },
+  computer: { start: () => ipcRenderer.invoke('computer:start'), stop: () => ipcRenderer.invoke('computer:stop') },
   update: { state: () => ipcRenderer.invoke('update:state'), check: () => ipcRenderer.invoke('update:check'), install: () => ipcRenderer.invoke('update:install') },
   phoneUnpairTelegram: () => ipcRenderer.invoke('phone:unpairTelegram'),
   getWakeModel: () => ipcRenderer.invoke('wake:model'),
@@ -90,7 +92,7 @@ contextBridge.exposeInMainWorld('orbit', {
     close: () => ipcRenderer.invoke('win:close'),
   },
   on: (channel, fn) => {
-    const ok = ['ui:orbiter', 'agent:event', 'tasks:changed', 'ui:focusInput', 'settings:changed', 'live:event', 'voice:progress', 'update:state', 'connectors:changed'];
+    const ok = ['ui:orbiter', 'agent:event', 'tasks:changed', 'ui:focusInput', 'settings:changed', 'live:event', 'voice:progress', 'update:state', 'connectors:changed', 'computer:frame'];
     if (!ok.includes(channel)) return;
     ipcRenderer.on(channel, (_e, payload) => fn(payload));
   },

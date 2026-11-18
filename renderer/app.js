@@ -197,6 +197,7 @@
   }
   const GLOBAL = new Set(['tasks_changed', 'memory_changed', 'speak', 'panels_changed', 'projects_changed', 'updates_changed']);
   api.on('agent:event', (e) => {
+    if (e.type === 'computer_log' || e.type === 'sandbox_state') { window.__sbEvent && window.__sbEvent(e); return; }
     if (e.type === 'model_switch') { toast(e.reason === 'picked' ? `Now using ${e.model}. The task carries on from where it was.` : `${e.from} isn't answering right now, so Orbit switched to ${e.model}.`); return; }
     if (e.type === 'models_changed') { paintModelChip(); return; }
     if (e.type === 'thread_reset') { if (e.scope === scope) openScope(scope); return; }
@@ -614,8 +615,8 @@
   $('#openMemFolder').onclick = () => api.openMemoryFolder();
 
   // ---------- settings ----------
-  const FIELDS = ['orbitVoice', 'orbitStt', 'orbitTts', 'orbitPhononVoice', 'orbitWinVoice', 'orbitPauseMs', 'liveEngine', 'liveGeminiVoice', 'liveOpenaiVoice', 'baseUrl', 'model', 'fastModel', 'voiceModel', 'browserChannel', 'phoneWhen', 'phoneIdleMinutes', 'ntfyServer', 'transcribeModel', 'userName', 'approvalMode', 'dailyTokenCap', 'contextBudget', 'maxSteps', 'chatThinking', 'orbiterThinking', 'orbiterHandoffMode', 'hotkey', 'maxWorkers', 'imageModel', 'imageBaseUrl', 'googleClientId', 'visionModel'];
-  const TOGGLES = ['autoUpdate', 'talkFirst', 'autoCall', 'orbitGpu', 'wakeOpensLive', 'voiceReplies', 'closeToTray', 'startWithWindows', 'wakeWord', 'ntfyEnabled', 'telegramEnabled', 'osintBeta'];
+  const FIELDS = ['sandboxRamGb', 'orbitVoice', 'orbitStt', 'orbitTts', 'orbitPhononVoice', 'orbitWinVoice', 'orbitPauseMs', 'liveEngine', 'liveGeminiVoice', 'liveOpenaiVoice', 'baseUrl', 'model', 'fastModel', 'voiceModel', 'browserChannel', 'phoneWhen', 'phoneIdleMinutes', 'ntfyServer', 'transcribeModel', 'userName', 'approvalMode', 'dailyTokenCap', 'contextBudget', 'maxSteps', 'chatThinking', 'orbiterThinking', 'orbiterHandoffMode', 'hotkey', 'maxWorkers', 'imageModel', 'imageBaseUrl', 'googleClientId', 'visionModel'];
+  const TOGGLES = ['sandboxOn', 'autoUpdate', 'talkFirst', 'autoCall', 'orbitGpu', 'wakeOpensLive', 'voiceReplies', 'closeToTray', 'startWithWindows', 'wakeWord', 'ntfyEnabled', 'telegramEnabled', 'osintBeta'];
   // Edits you haven't saved yet survive any refresh of this screen (a new ntfy topic,
   // Telegram pairing, Google connect...). Before, those refreshes wiped the whole form.
   const dirty = new Set();
@@ -707,6 +708,47 @@
   api.on('update:state', showUpdate);
   api.update.state().then(showUpdate);
   $('#checkUpdate').onclick = async () => showUpdate(await api.update.check());
+
+  // ---- Sandbox settings + Computer panel ----
+  const SB_MODES = { read: 'Read only', ask: 'Ask first', full: 'Full access' };
+  async function showSandbox(st) {
+    st = st && st.shares ? st : await api.sandbox.status();
+    const dot = { ready: 'ok', setting_up: 'busy', error: 'bad', broken: 'bad' }[st.state] || 'off';
+    $('#sbDot').className = 'sb-dot ' + dot;
+    $('#sbState').textContent = st.text || '';
+    $('#sbSetup').textContent = st.state === 'ready' ? 'Repair' : st.state === 'setting_up' ? 'Setting up…' : 'Set up';
+    $('#sbSetup').disabled = st.state === 'setting_up' || st.state === 'unsupported';
+    $('#sbClean').style.display = $('#sbReset').style.display = st.state === 'ready' ? '' : 'none';
+    $('#computerBtn').style.display = st.on ? '' : 'none';
+    const box = $('#sbShares'); box.innerHTML = '';
+    if (!st.shares.length) box.innerHTML = '<p class="muted sm">Nothing shared yet. The sandbox can\'t see any of your files.</p>';
+    for (const sh of st.shares) {
+      const row = document.createElement('div'); row.className = 'sb-share';
+      row.innerHTML = `<svg viewBox="0 0 24 24"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg><span class="sb-path"></span><select>${Object.entries(SB_MODES).map(([k, v]) => `<option value="${k}"${k === sh.mode ? ' selected' : ''}>${v}</option>`).join('')}</select><button class="ghost sm" title="Stop sharing">Remove</button>`;
+      row.querySelector('.sb-path').textContent = sh.path;
+      row.querySelector('select').onchange = async (e) => { await api.sandbox.share(sh.path, e.target.value); showSandbox(); };
+      row.querySelector('button').onclick = async () => { await api.sandbox.unshare(sh.path); showSandbox(); };
+      box.appendChild(row);
+    }
+  }
+  $('#sbSetup').onclick = async () => { $('#sbSetup').disabled = true; $('#sbState').textContent = 'Starting…'; await api.sandbox.setup(); showSandbox(); };
+  $('#sbReset').onclick = async () => { await api.sandbox.reset(); showSandbox(); };
+  $('#sbClean').onclick = async () => { $('#sbClean').disabled = true; const mb = await api.sandbox.cleanup(); $('#sbClean').disabled = false; $('#sbState').textContent = `Cleaned up${mb != null ? `, ${mb} MB freed` : ''}.`; };
+  $('#sbAdd').onclick = async () => { const r = await api.sandbox.share(null, 'read'); if (r) showSandbox(); };
+  $('#s-sandboxOn').addEventListener('change', () => setTimeout(showSandbox, 600));
+  setTimeout(() => showSandbox().catch(() => {}), 1500);
+
+  const compLog = $('#compLog');
+  const addLog = (line) => { compLog.textContent += line + '\n'; if (compLog.textContent.length > 40000) compLog.textContent = compLog.textContent.slice(-30000); compLog.scrollTop = compLog.scrollHeight; };
+  $('#computerBtn').onclick = async () => { $('#computer').hidden = false; compLog.textContent = ''; const r = await api.computer.start(); (r.log || []).forEach(e => addLog(e.line)); };
+  const closeComp = () => { $('#computer').hidden = true; api.computer.stop(); };
+  $('#compClose').onclick = closeComp;
+  $('#computer').addEventListener('click', (e) => { if (e.target.id === 'computer') closeComp(); });
+  api.on('computer:frame', (f) => {
+    if (f.idle) { $('#compImg').style.display = 'none'; $('#compIdle').style.display = ''; $('#compUrl').textContent = ''; return; }
+    $('#compImg').src = 'data:image/jpeg;base64,' + f.data; $('#compImg').style.display = 'block'; $('#compIdle').style.display = 'none'; $('#compUrl').textContent = f.url || '';
+  });
+  window.__sbEvent = (e) => { if (e.type === 'computer_log' && !$('#computer').hidden) addLog(e.line); if (e.type === 'sandbox_state') showSandbox(); };
   const doUpdate = async () => { await saveSettings(); showUpdate(await api.update.install()); };
   $('#installUpdate').onclick = doUpdate;
   $('#updateBarGo').onclick = doUpdate;

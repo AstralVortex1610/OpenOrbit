@@ -11,6 +11,7 @@
   <header class="titlebar">
     <div class="tb-brand"><img class="logo-sm" src="mark.png" alt="" /><span>Orbit</span></div>
     <div class="tb-status" id="tbStatus"></div>
+    <button class="tb-comp" id="computerBtn" title="See what Orbit is doing in its sandbox" style="display:none"><svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="11.5" rx="2"/><path d="M9 20h6M12 16v4"/></svg>Computer</button>
     <div class="tb-buttons">
       <button data-win="minimize" title="Minimize"><svg viewBox="0 0 12 12"><path d="M2 6h8"/></svg></button>
       <button data-win="maximize" title="Maximize"><svg viewBox="0 0 12 12"><rect x="2.5" y="2.5" width="7" height="7" rx="1"/></svg></button>
@@ -18,6 +19,13 @@
     </div>
   </header>
 
+  <div class="computer" id="computer" hidden>
+    <div class="comp-win">
+      <div class="comp-head"><b>Orbit's computer</b><span id="compUrl" class="muted"></span><button class="ghost sm" id="compClose">Close</button></div>
+      <div class="comp-screen"><img id="compImg" alt="" /><div class="comp-idle" id="compIdle">Nothing open in the browser right now.</div></div>
+      <div class="comp-term"><div class="comp-term-h">Terminal</div><pre id="compLog"></pre></div>
+    </div>
+  </div>
   <div class="shell">
     <!-- Rail -->
     <nav class="rail">
@@ -617,6 +625,19 @@
             <p class="muted">Open-source intelligence tools: photo metadata and geolocation, reverse image search, domain and IP recon, organisation and public-figure lookups. Public sources only.</p>
             <label class="toggle"><input type="checkbox" id="s-osintBeta" /><span></span>Turn on Osint</label>
             <label>Have I Been Pwned key <small class="muted">optional, for checking your own email in breaches</small><input id="k-hibpKey" type="password" autocomplete="off" placeholder="Saved keys stay hidden" /><small class="muted" id="k-hibpKeyState"></small></label>
+          </div>
+
+          <div class="card" id="sbCard">
+            <h3>Sandbox <span class="beta-pill sm">Beta</span></h3>
+            <p class="muted">Orbit gets its own Linux computer inside your PC. Commands, installs and browsing happen there, out of your way. It only sees the folders you share.</p>
+            <label class="toggle"><input type="checkbox" id="s-sandboxOn" /><span></span>Run Orbit's work in its own sandbox</label>
+            <div class="sb-state"><i id="sbDot"></i><span id="sbState" class="muted">Checking…</span></div>
+            <div class="row"><button class="primary" id="sbSetup" type="button">Set up</button><button class="ghost" id="sbClean" type="button">Clean up now</button><button class="ghost danger-t" id="sbReset" type="button">Reset</button></div>
+            <label><span>Memory it can use</span><select id="s-sandboxRamGb"><option value="2">2 GB</option><option value="4">4 GB (recommended)</option><option value="6">6 GB</option><option value="8">8 GB</option></select></label>
+            <h4 class="sb-h">Shared folders</h4>
+            <p class="muted sm">Read only: it can look. Ask first: it works on a copy and you approve changes. Full access: it edits your files directly.</p>
+            <div id="sbShares" class="sb-shares"></div>
+            <button class="ghost" id="sbAdd" type="button">+ Share a folder or drive</button>
           </div>
 
           <div class="card">

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="OrbitTheme" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/orbit_bg</item>
+        <item name="android:statusBarColor">@color/orbit_bg</item>
+        <item name="android:navigationBarColor">@color/orbit_bg</item>
+        <item name="android:colorAccent">@color/orbit_accent</item>
+    </style>
+    <color name="orbit_bg">#FF1A1917</color>
+    <color name="orbit_accent">#FFC4673A</color>
+</resources>

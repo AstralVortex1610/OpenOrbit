@@ -7,3 +7,11 @@ test/screens/
 assets/vosk-model-small-en-us-0.15.tar.gz
 renderer/voice/worker.js
 test/out/
+dist-extra/
+dist-remote/
+build/cloudflared/
+remote/android/app/build/
+remote/android/.gradle/
+remote/android/local.properties
+remote/android/app/src/main/assets/www/
+remote/keystore/

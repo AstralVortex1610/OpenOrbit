@@ -882,3 +882,81 @@ body.proj-orbiter .view-chat .scroller, body.proj-orbiter .view-chat .composer-w
 .comp-term { border-top: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: #12110f; }
 .comp-term-h { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent-2); padding: 8px 14px 4px; }
 .comp-term pre { flex: 1; margin: 0; padding: 0 14px 10px; overflow: auto; font: 12px/1.5 ui-monospace, Consolas, monospace; color: #d8cfc4; white-space: pre-wrap; }
+
+/* ---------- Companion view (Settings → Look → Interface) ---------- */
+/* Classic is untouched: everything below only shows when body.companion-on is set. */
+.companion, .cmp-live { display: none; }
+.look-interface { margin-top: 14px; }
+body.companion-on #view-chat { --cmp-w: clamp(250px, 31vw, 420px); padding-left: var(--cmp-w); }
+body.companion-on .companion {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  position: absolute; left: 0; top: 0; bottom: 0; width: var(--cmp-w); z-index: 2;
+  padding: 18px 18px 22px; gap: 12px; overflow: hidden;
+  background: var(--bg-2); border-right: 1px solid var(--line);
+}
+.cmp-stage {
+  position: relative; width: 100%; flex: 0 1 auto; aspect-ratio: 1 / 1.08; min-height: 200px; max-height: calc(100% - 150px);
+  border-radius: var(--radius-lg); overflow: hidden; isolation: isolate;
+  background: radial-gradient(circle at 50% 42%, rgba(196, 103, 58, .34), rgba(196, 103, 58, .08) 46%, transparent 72%), var(--bg);
+  border: 1px solid var(--line);
+}
+[data-theme="light"] .cmp-stage { background: radial-gradient(circle at 50% 42%, rgba(228, 162, 112, .55), rgba(228, 162, 112, .16) 48%, transparent 74%), var(--surface); }
+.cmp-glow { position: absolute; left: 50%; top: 42%; width: 80%; aspect-ratio: 1; transform: translate(-50%, -50%); border-radius: 50%; z-index: -1;
+  background: radial-gradient(circle, rgba(228, 162, 112, .32), transparent 68%); opacity: .7; transition: opacity .4s var(--ease), transform .4s var(--ease); }
+.speaking .cmp-glow { opacity: 1; transform: translate(-50%, -50%) scale(1.06); }
+/* All six frames are stacked; only the current one is opaque, so a swap is one style change (no reload, no flicker). */
+.cmp-avatar { position: absolute; left: 50%; bottom: 0; height: 86%; aspect-ratio: 436 / 364; max-width: 112%; transform: translateX(-50%); transform-origin: 50% 100%;
+  animation: cmp-breathe 4.8s ease-in-out infinite; will-change: transform;
+  -webkit-mask-image: linear-gradient(to bottom, #000 82%, transparent 100%); mask-image: linear-gradient(to bottom, #000 82%, transparent 100%); }
+.cmp-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; object-position: 50% 100%; opacity: 0; user-select: none; pointer-events: none; }
+.cmp-avatar[data-frame="neutral"] img[data-f="neutral"], .cmp-avatar[data-frame="a"] img[data-f="a"], .cmp-avatar[data-frame="o"] img[data-f="o"],
+.cmp-avatar[data-frame="e"] img[data-f="e"], .cmp-avatar[data-frame="blink"] img[data-f="blink"], .cmp-avatar[data-frame="laugh"] img[data-f="laugh"] { opacity: 1; }
+@keyframes cmp-breathe { 0%, 100% { transform: translateX(-50%) translateY(0) scale(1); } 50% { transform: translateX(-50%) translateY(-4px) scale(1.008); } }
+.cmp-wave {
+  position: absolute; left: 50%; bottom: 14px; transform: translate(-50%, 6px); display: flex; align-items: center; gap: 4px; height: 34px;
+  padding: 0 14px; border-radius: 99px; background: rgba(20, 16, 13, .62); backdrop-filter: blur(8px); color: #e8946a; font-size: 12px; font-weight: 600;
+  opacity: 0; pointer-events: none; transition: opacity .25s var(--ease), transform .25s var(--ease);
+}
+.cmp-wave i { display: block; width: 4px; height: calc(5px + var(--l, 0) * 17px); border-radius: 2px; background: #e07a45; transition: height .07s linear; }
+.cmp-wave span { margin-left: 6px; letter-spacing: .02em; }
+.speaking .cmp-wave { opacity: 1; transform: translate(-50%, 0); }
+.cmp-meta { text-align: center; min-width: 0; width: 100%; }
+.cmp-name { font-family: var(--serif); font-size: 24px; line-height: 1.2; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmp-state { font-size: 12.5px; color: var(--text-3); margin-top: 2px; min-height: 18px; }
+.speaking .cmp-state { color: var(--accent); }
+.cmp-talk { display: inline-flex; align-items: center; gap: 8px; padding: 10px 20px; border-radius: 99px; background: var(--accent); color: #fff; font-weight: 600; box-shadow: 0 8px 22px rgba(196, 103, 58, .3); transition: filter .2s, transform .15s; flex: 0 0 auto; }
+.cmp-talk:hover { filter: brightness(1.08); } .cmp-talk:active { transform: scale(.96); }
+.cmp-talk svg { width: 18px; height: 18px; stroke-width: 2; }
+@media (max-height: 640px) { body.companion-on .companion { padding: 12px; gap: 8px; } .cmp-name { font-size: 20px; } }
+/* In a live call the avatar takes the orb's place. */
+body.companion-on .live .orb-wrap { display: none; }
+body.companion-on .cmp-live { display: block; position: relative; width: min(420px, 70vw); height: min(360px, 44vh); }
+.cmp-live .cmp-glow { top: 46%; width: 92%; }
+.cmp-live .cmp-avatar { height: 100%; }
+.cmp-live-name { position: absolute; left: 0; right: 0; bottom: -6px; text-align: center; font-family: var(--serif); font-size: 20px; color: #f3eee6; text-shadow: 0 2px 12px rgba(0,0,0,.6); display: none; }
+@media (prefers-reduced-motion: reduce) { .cmp-avatar { animation: none; } .cmp-wave i { transition: none; } }
+/* Sender label on replies: shown in Companion only, so Classic looks exactly as before. */
+.msg .who { display: none; }
+body.companion-on .msg.assistant .who { display: block; font-size: 12px; font-weight: 700; color: var(--accent); letter-spacing: .02em; margin-bottom: 2px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The narrower chat column keeps room for each reply's Listen button (it sits just right of the text). */
+body.companion-on #view-chat .scroller { padding-right: 44px; overflow-x: hidden; }
+.toggle em.tg-t { font-style: normal; }
+
+/* ---- 0.13.1: Phone Link ---- */
+.pl-routes { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }
+.pl-route { display: flex; align-items: center; gap: 9px; font-size: 13px; }
+.pl-route span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.pl-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--line); flex: none; }
+.pl-dot.ok { background: var(--ok); box-shadow: 0 0 0 4px rgba(127,182,133,.15); }
+.pl-dot.busy { background: var(--warn); animation: sbPulse 1.2s ease-in-out infinite; }
+.pl-dot.bad { background: var(--danger); }
+.pl-qr { display: flex; gap: 18px; align-items: center; margin: 6px 0 4px; padding: 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2, rgba(255,255,255,.02)); }
+.pl-qr img { width: 184px; height: 184px; border-radius: 10px; background: #fff; padding: 6px; image-rendering: pixelated; flex: none; }
+.pl-qr-side { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.pl-code { font: 600 26px/1.2 ui-monospace, "Cascadia Code", Consolas, monospace; letter-spacing: .12em; color: var(--accent-2); }
+.pl-devices { display: flex; flex-direction: column; gap: 8px; margin: 8px 0 12px; }
+.pl-dev { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border: 1px solid var(--line); border-radius: var(--radius); }
+.pl-dev-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pl-dev-t span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-adv { margin-top: 6px; }
+.pl-adv[open] summary { margin-bottom: 8px; }

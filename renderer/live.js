@@ -7,10 +7,11 @@
   let on = false, muted = false, engine = 'gemini', state = 'idle';
   let micLevel = 0, loudChunks = 0, raf = 0;
 
+  const N = () => window.OrbitAssistantName || 'Orbit'; // the assistant's name from Settings
   const STATE_TEXT = {
     connecting: 'Connecting…',
     listening: 'Listening',
-    speaking: 'Orbit is talking. Jump in anytime.',
+    get speaking() { return `${N()} is talking. Jump in anytime.`; },
     thinking: 'Thinking…',
     working: 'Working on it',
     muted: 'Muted',
@@ -50,6 +51,7 @@
       playGain = playCtx.createGain();
       analyser = playCtx.createAnalyser(); analyser.fftSize = 512;
       playGain.connect(analyser);
+      if (window.OrbitCompanion) OrbitCompanion.onAudioNode(playGain); // the companion avatar's lips follow this voice
       // Play through an <audio> element, not straight to the speakers: Chromium's echo canceller only
       // reliably removes sound it plays this way, so Orbit doesn't hear (and interrupt) itself.
       try {
@@ -70,8 +72,8 @@
       return;
     }
     if (voiceLoad) {
-      if (OrbitVoice.loading) say(OrbitVoice.ready ? '' : 'Getting Orbit\'s voice ready (first time takes a minute or two)…');
-      try { await voiceLoad; } catch (err) { fail(`Orbit's voice couldn't start: ${err.message || err}`); return; }
+      if (OrbitVoice.loading) say(OrbitVoice.ready ? '' : `Getting ${N()}'s voice ready (first time takes a minute or two)…`);
+      try { await voiceLoad; } catch (err) { fail(`${N()}'s voice couldn't start: ${err.message || err}`); return; }
       if (!on) return;
       OrbitVoice.reset(); OrbitVoice.setVoice(st.voice || 'af_heart');
       try { const s = await api.getSettings(); OrbitVoice.setPauseMs(Number(s.orbitPauseMs) || 900); OrbitVoice.setWinVoice(s.orbitWinVoice || ''); OrbitVoice.setPhononVoice(s.orbitPhononVoice || 'Easton'); } catch {}
@@ -79,7 +81,7 @@
     if (!on) return;
     say('Connecting…');
     let r;
-    try { r = await within(25000, api.live.start(), 'Orbit didn\'t answer. Try again, or restart Orbit'); } catch (err) { fail(err.message); return; }
+    try { r = await within(25000, api.live.start(), `${N()} didn't answer. Try again, or restart Orbit`); } catch (err) { fail(err.message); return; }
     if (!on) return;
     if (!r.ok) { fail(r.error); return; }
     engine = r.engine;

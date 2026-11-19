@@ -4,6 +4,7 @@
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
   const api = window.orbit;
   const A = () => window.OrbitApp;
+  const N = () => esc(window.OrbitAssistantName || 'Orbit'); // the assistant's name from Settings
   const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
   const I = {
@@ -92,7 +93,7 @@
     const d = p.data;
     if (!d) {
       if (p.status === 'error') return `<div class="pn-err">${esc(p.error || 'Couldn\'t fill this panel.')}</div><button class="ghost sm" data-act="refresh">Try again</button>`;
-      return '<div class="pn-skel"><i></i><i></i><i></i></div><div class="pn-wait">Orbit is gathering real values…</div>';
+      return `<div class="pn-skel"><i></i><i></i><i></i></div><div class="pn-wait">${N()} is gathering real values…</div>`;
     }
     const trend = d.trend === 'up' ? 'up' : d.trend === 'down' ? 'down' : '';
     if (d.kind === 'stat') return `<div class="pn-value">${esc(d.value)}${d.unit ? `<small>${esc(d.unit)}</small>` : ''}</div>${d.delta ? `<div class="pn-delta ${trend}">${trend === 'up' ? '▲ ' : trend === 'down' ? '▼ ' : ''}${esc(d.delta)}</div>` : ''}${d.sub ? `<div class="pn-sub">${esc(d.sub)}</div>` : ''}${d.items && d.items.length ? listHtml(d.items.slice(0, 3)) : ''}`;
@@ -110,7 +111,7 @@
     const panels = await api.panels.list();
     const el = $('#panels');
     if (!panels.length) {
-      el.innerHTML = `<div class="panels-empty"><div class="pe-art" aria-hidden="true"><i></i><i></i><i></i><i></i></div><div><h4>Your Home is empty</h4><p>Panels show things that change: prices, weather, a countdown, mail. Orbit fills them with real values and keeps them fresh.</p><div class="pe-chips">${SUGGEST.map((s, i) => `<button class="chip-sm" data-sug="${i}">${I.plus}${esc(s.t)}</button>`).join('')}</div></div></div>`;
+      el.innerHTML = `<div class="panels-empty"><div class="pe-art" aria-hidden="true"><i></i><i></i><i></i><i></i></div><div><h4>Your Home is empty</h4><p>Panels show things that change: prices, weather, a countdown, mail. ${N()} fills them with real values and keeps them fresh.</p><div class="pe-chips">${SUGGEST.map((s, i) => `<button class="chip-sm" data-sug="${i}">${I.plus}${esc(s.t)}</button>`).join('')}</div></div></div>`;
       $$('[data-sug]', el).forEach(b => b.onclick = async () => { const s = SUGGEST[+b.dataset.sug]; await api.panels.create({ title: s.t, prompt: s.p, everyMinutes: s.e }); renderPanels(); });
       return;
     }
@@ -140,10 +141,10 @@
   async function editPanel(p) {
     const v = await modal({
       title: p ? 'Edit panel' : 'New panel',
-      sub: p ? '' : 'Say what it should show. Orbit finds the real values and keeps them fresh.',
+      sub: p ? '' : `Say what it should show. ${N()} finds the real values and keeps them fresh.`,
       ok: p ? 'Save' : 'Add to Home',
       body: `<label>What should it show?<textarea name="prompt" rows="3" required placeholder="e.g. Bitcoin price in rupees with today's change · Days left until JEE Main · Top 5 GitHub trending AI repos">${esc(p ? p.prompt : '')}</textarea></label>
-        <div class="row2"><label>Title<input name="title" placeholder="Orbit picks one" value="${esc(p ? p.title : '')}" /></label>
+        <div class="row2"><label>Title<input name="title" placeholder="${N()} picks one" value="${esc(p ? p.title : '')}" /></label>
         <label>Refresh<select name="every">${EVERY.map(([m, t]) => `<option value="${m}" ${(p ? p.everyMinutes : 180) === m ? 'selected' : ''}>${t}</option>`).join('')}</select></label></div>`,
     });
     if (!v || !v.prompt.trim()) return;
@@ -179,7 +180,7 @@
   async function renderHomeFeed() {
     const ups = (await api.updates.list()).slice(0, 4);
     const el = $('#homeUpdates');
-    el.innerHTML = ups.length ? ups.map(u => feedItem(u, true)).join('') : '<div class="mini-empty">Nothing yet. When Orbit works on its own, it shows up here.</div>';
+    el.innerHTML = ups.length ? ups.map(u => feedItem(u, true)).join('') : `<div class="mini-empty">Nothing yet. When ${N()} works on its own, it shows up here.</div>`;
     $$('.upd', el).forEach(n => n.onclick = async () => { const u = ups.find(x => x.id === n.dataset.id); await api.updates.read([u.id]); if (u.target) openTarget(u); else A().show('updates'); });
   }
   async function renderHomeProjects() {
@@ -208,7 +209,7 @@
     $('#projAddTile').onclick = newProject;
   }
   async function newProject() {
-    const v = await modal({ title: 'New project', sub: 'Its own chat, files folder and brief.', ok: 'Create', body: `<label>Name<input name="name" required maxlength="60" placeholder="e.g. RideCompare app" /></label><label>What's it for?<textarea name="about" rows="3" placeholder="One or two lines. Orbit uses this as the project's goal."></textarea></label>` });
+    const v = await modal({ title: 'New project', sub: 'Its own chat, files folder and brief.', ok: 'Create', body: `<label>Name<input name="name" required maxlength="60" placeholder="e.g. RideCompare app" /></label><label>What's it for?<textarea name="about" rows="3" placeholder="One or two lines. ${N()} uses this as the project's goal."></textarea></label>` });
     if (!v || !v.name.trim()) return;
     const p = await api.projects.create({ name: v.name.trim(), about: v.about.trim() });
     A().show('chat', { scope: p.id });
@@ -223,7 +224,7 @@
     $('#scopeName').textContent = cur.name; $('#scopeAbout').textContent = cur.about || '';
     const m = $('#scopeMono'); m.textContent = cur.name.slice(0, 1).toUpperCase(); m.style.setProperty('--c', cur.color);
     $('#briefText').value = cur.brief || ''; $('#briefSave').disabled = true;
-    $('#fileList').innerHTML = (cur.fileList || []).length ? cur.fileList.map(f => `<button class="file" data-n="${esc(f.name)}">${I.file}<span>${esc(f.name)}</span><small>${f.size > 1048576 ? (f.size / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(f.size / 1024)) + ' KB'}</small></button>`).join('') : '<div class="mini-empty">No files yet. Anything Orbit makes for this project lands here.</div>';
+    $('#fileList').innerHTML = (cur.fileList || []).length ? cur.fileList.map(f => `<button class="file" data-n="${esc(f.name)}">${I.file}<span>${esc(f.name)}</span><small>${f.size > 1048576 ? (f.size / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(f.size / 1024)) + ' KB'}</small></button>`).join('') : `<div class="mini-empty">No files yet. Anything ${N()} makes for this project lands here.</div>`;
     $$('#fileList .file').forEach(b => b.onclick = () => api.projects.openFile(cur.id, b.dataset.n));
   }
   async function reloadCur() { if (!cur) return; const p = await api.projects.get(cur.id); if (p) { const dirty = !$('#briefSave').disabled; const keep = $('#briefText').value; cur = p; fillScope(); if (dirty) { $('#briefText').value = keep; $('#briefSave').disabled = false; } } }

@@ -1,0 +1,17 @@
+/* Orbit Remote — Orbiter on a phone: one column; sessions and the task/changes pane slide over it. */
+@media (max-width: 760px) {
+  .app { grid-template-columns: 1fr !important; }
+  .side, .pane { position: fixed !important; top: 40px; bottom: 0; z-index: 30 !important; width: min(86vw, 340px); transition: transform .25s ease; box-shadow: 0 0 40px rgba(0,0,0,.5); }
+  .side { left: 0; transform: translateX(-105%); }
+  .pane { right: 0; transform: translateX(105%); }
+  body.rm-side .side, body.rm-pane .pane { transform: none; }
+  .side kbd, .hint kbd { display: none; }
+  .rm-tbb { display: inline-grid; place-items: center; width: 34px; height: 30px; border-radius: 8px; border: 1px solid var(--line); background: transparent; color: inherit; margin-right: 6px; flex: none; }
+  .rm-tbb svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+  .starts { grid-template-columns: 1fr !important; }
+  .composer textarea { font-size: 16px; }
+  .composer-wrap { padding: 4px 8px 10px !important; }
+  .hint, #paneBtn { display: none !important; }
+  body.rm-pane .pane { display: flex !important; }
+  .app { height: calc(100% - 40px); }
+}

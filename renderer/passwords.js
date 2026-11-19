@@ -18,7 +18,7 @@
       <code class="pw-dots" data-pw>${shown[r.id] ? esc(shown[r.id]) : (r.hasPassword ? '••••••••' : '<i class="muted">no password</i>')}</code>
       ${r.hasPassword ? `<button class="link-btn" data-show>${shown[r.id] ? 'Hide' : 'Show'}</button><button class="link-btn" data-copy>Copy</button>` : ''}
       <button class="link-btn" data-edit>Edit</button><button class="link-btn danger" data-del>Delete</button></div>`).join('')
-      : `<div class="empty-note">${rows.length ? 'Nothing matches.' : 'No logins yet. Tell Orbit one in chat, like "save my GitHub login: user affan, password …", or add it here.'}</div>`;
+      : `<div class="empty-note">${rows.length ? 'Nothing matches.' : `No logins yet. Tell ${window.OrbitAssistantName || 'Orbit'} one in chat, like "save my GitHub login: user affan, password …", or add it here.`}</div>`;
     $$('.pw-row').forEach(row => {
       const id = row.dataset.id; const r = rows.find(x => x.id === id);
       const show = $('[data-show]', row), copy = $('[data-copy]', row);

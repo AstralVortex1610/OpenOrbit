@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Same-network connections to the laptop are plain ws:// on the LAN. That's fine: every frame is already
+     sealed end to end inside the app (Phone Link), so the network never carries readable data. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors><certificates src="system" /></trust-anchors>
+    </base-config>
+</network-security-config>

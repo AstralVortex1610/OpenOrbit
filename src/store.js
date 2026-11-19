@@ -10,6 +10,8 @@ const DEFAULT_SETTINGS = {
   browserChannel: 'msedge',
   transcribeModel: 'whisper-1',
   userName: '',
+  assistantName: 'Orbit', // what the assistant is called in the UI and prompts (the app itself stays "Orbit")
+  interfaceStyle: 'classic', // 'classic' | 'companion' (anime avatar with lip sync beside the chat)
   voiceReplies: false,
   closeToTray: true,
   startWithWindows: false,
@@ -71,8 +73,21 @@ const DEFAULT_SETTINGS = {
   sandboxRamGb: 4,
   sandboxShares: [], // [{ path, mode: read | ask | full }]
   sandboxCleanedAt: 0,
+  // Phone Link (0.13.1): the Orbit Remote phone app. Everything runs here; the phone is a remote screen.
+  phoneLinkEnabled: false, // off by default: no server, no tunnel, nothing listening
+  phoneLinkLan: true, // let phones on the same network connect directly
+  phoneLinkPort: 47821,
+  phoneLinkRemote: 'cloudflare', // how a phone on another network reaches this PC: 'cloudflare' (quick tunnel + ntfy rendezvous) | 'relay' (your own relay) | 'off' (same network only)
+  phoneLinkRelayUrl: '', // wss://your-relay.example.com (relay/ in this repo)
+  phoneLinkNoThirdParty: false, // true: never use Cloudflare or ntfy.sh for Phone Link, whatever else is set
+  phoneLinkRendezvous: 'https://ntfy.sh', // ntfy server for the encrypted "where is my laptop" note (self-hosted ntfy works too)
   orbiterHandoffMode: 'off', // off: only when the user asks for Orbiter by name | suggest: may offer, hands off only after a yes
 };
+// The assistant's display name: trimmed, at most 24 characters, "Orbit" when empty.
+function assistantNameOf(s) {
+  const n = String((s && s.assistantName) || '').replace(/\s+/g, ' ').trim().slice(0, 24).trim();
+  return n || 'Orbit';
+}
 const LIST_KEYS = new Set(['backupModels', 'mcpServers', 'apiConnectors', 'modelTiers']);
 const TIER_IDS = ['spark', 'pulse', 'surge'];
 function sleepSync(ms) { try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } catch {} }
@@ -89,7 +104,7 @@ function fixModelName(m, u) {
   return /generativelanguage\.googleapis\.com/i.test(String(u || '')) ? s.replace(/^models\//, '') : s;
 }
 
-const SECRET_KEYS = ['liveGeminiKey', 'liveOpenaiKey', 'googleClientSecret', 'googleRefresh', 'netlifyToken', 'imageApiKey', 'hibpKey'];
+const SECRET_KEYS = ['liveGeminiKey', 'liveOpenaiKey', 'googleClientSecret', 'googleRefresh', 'netlifyToken', 'imageApiKey', 'hibpKey', 'phoneLinkRelayToken'];
 
 const DEFAULT_TASKS = [
   {
@@ -180,6 +195,8 @@ class Store {
     // 0.12.4: Orbiter thinks Quick by default (it was too slow on Model default). Applied once.
     if (!raw._m124 && raw === this._settingsRaw && Object.keys(raw).length) { raw._m124 = true; if (raw.orbiterThinking === 'default') raw.orbiterThinking = 'quick'; try { this._write('settings.json', raw); } catch {} }
     const s = { ...DEFAULT_SETTINGS, ...raw };
+    s.assistantName = assistantNameOf(s);
+    if (s.interfaceStyle !== 'companion') s.interfaceStyle = 'classic';
     s.apiKey = '';
     if (s.apiKeyEnc) {
       try {
@@ -233,6 +250,8 @@ class Store {
     const cur = this._raw(true);
     const next = { ...cur };
     for (const k of Object.keys(DEFAULT_SETTINGS)) if (!LIST_KEYS.has(k) && incoming[k] !== undefined) next[k] = incoming[k];
+    if (incoming.assistantName !== undefined) next.assistantName = assistantNameOf(incoming);
+    if (incoming.interfaceStyle !== undefined) next.interfaceStyle = incoming.interfaceStyle === 'companion' ? 'companion' : 'classic';
     if (typeof incoming.apiKey === 'string' && incoming.apiKey.trim()) {
       const key = incoming.apiKey.trim();
       const enc = this.safe && this.safe.isEncryptionAvailable() ? this.safe.encryptString(key) : Buffer.from(key, 'utf8');
@@ -365,4 +384,4 @@ class Store {
   }
 }
 
-module.exports = { fixGoogleUrl, fixModelName, Store, DEFAULT_SETTINGS };
+module.exports = { fixGoogleUrl, fixModelName, Store, DEFAULT_SETTINGS, assistantNameOf };

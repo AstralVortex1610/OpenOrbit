@@ -9,7 +9,7 @@
 <body>
   <!-- Title bar -->
   <header class="titlebar">
-    <div class="tb-brand"><img class="logo-sm" src="mark.png" alt="" /><span>Orbit</span></div>
+    <div class="tb-brand"><img class="logo-sm" src="mark.png" alt="" /><span class="aname">Orbit</span></div>
     <div class="tb-status" id="tbStatus"></div>
     <button class="tb-comp" id="computerBtn" title="See what Orbit is doing in its sandbox" style="display:none"><svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="11.5" rx="2"/><path d="M9 20h6M12 16v4"/></svg>Computer</button>
     <div class="tb-buttons">
@@ -92,7 +92,7 @@
           </div>
           <form class="ask" id="homeAsk">
             <svg viewBox="0 0 24 24"><path d="M12 3.5l1.9 5.2 5.3 1.8-5.3 1.9L12 17.6l-1.9-5.2-5.3-1.9 5.3-1.8z"/><path d="M19 15.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg>
-            <input id="homeAskInput" placeholder="Ask Orbit anything, or say what to put on your Home…" autocomplete="off" />
+            <input id="homeAskInput" placeholder="Ask Orbit anything, or say what to put on your Home…" data-name-ph="Ask {name} anything, or say what to put on your Home…" autocomplete="off" />
             <button type="submit" class="send" title="Send"><svg class="i-send" viewBox="0 0 24 24"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5"/></svg></button>
           </form>
 
@@ -116,7 +116,7 @@
       <section class="view" id="view-projects">
         <div class="page">
           <div class="page-head">
-            <div><h2>Projects</h2><p>Separate spaces for work that keeps going. Each has its own chat, files and a brief Orbit keeps up to date.</p></div>
+            <div><h2>Projects</h2><p>Separate spaces for work that keeps going. Each has its own chat, files and a brief <span class="aname">Orbit</span> keeps up to date.</p></div>
             <button class="primary" id="newProjectBtn"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>New project</button>
           </div>
           <div class="proj-grid" id="projGrid"></div>
@@ -127,7 +127,7 @@
       <section class="view" id="view-updates">
         <div class="page narrow">
           <div class="page-head">
-            <div><h2>Updates</h2><p>Everything Orbit did on its own: scheduled runs, background tasks, replies you missed, panels that need you.</p></div>
+            <div><h2>Updates</h2><p>Everything <span class="aname">Orbit</span> did on its own: scheduled runs, background tasks, replies you missed, panels that need you.</p></div>
             <div class="head-actions"><button class="ghost sm" id="updReadAll">Mark all read</button><button class="ghost sm" id="updClear">Clear</button></div>
           </div>
           <div class="filters" id="updFilters">
@@ -138,6 +138,27 @@
       </section>
 
       <section class="view view-chat" id="view-chat">
+        <aside class="companion" id="companion" aria-label="Companion">
+          <div class="cmp-stage">
+            <div class="cmp-glow" aria-hidden="true"></div>
+            <div class="cmp-avatar" data-frame="neutral" aria-hidden="true">
+              <img data-f="neutral" src="companion/neutral.png" alt="" draggable="false" />
+              <img data-f="a" src="companion/a.png" alt="" draggable="false" />
+              <img data-f="o" src="companion/o.png" alt="" draggable="false" />
+              <img data-f="e" src="companion/e.png" alt="" draggable="false" />
+              <img data-f="blink" src="companion/blink.png" alt="" draggable="false" />
+              <img data-f="laugh" src="companion/laugh.png" alt="" draggable="false" />
+            </div>
+            <div class="cmp-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><span>speaking</span></div>
+          </div>
+          <div class="cmp-meta">
+            <div class="cmp-name aname">Orbit</div>
+            <div class="cmp-state" id="cmpState">Here with you</div>
+          </div>
+          <button type="button" class="cmp-talk" id="cmpTalk" title="Talk with Orbit" data-name-title="Talk with {name}">
+            <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg><span>Talk</span>
+          </button>
+        </aside>
         <div class="scope-bar" id="scopeBar">
           <button class="scope-back" id="scopeBack" title="All projects"><svg viewBox="0 0 24 24"><path d="M14.5 6 8.5 12l6 6"/></svg></button>
           <span class="proj-mono" id="scopeMono"></span>
@@ -147,7 +168,7 @@
         </div>
         <aside class="drawer" id="drawer">
           <div class="drawer-head"><h3>Brief</h3><button class="primary sm" id="briefSave" disabled>Save</button></div>
-          <p class="muted">The project's standing memory. Orbit reads it every time and keeps it current.</p>
+          <p class="muted">The project's standing memory. <span class="aname">Orbit</span> reads it every time and keeps it current.</p>
           <textarea id="briefText" spellcheck="false"></textarea>
           <div class="drawer-head"><h3>Files</h3><button class="ghost sm" id="openProjFolder">Open folder</button></div>
           <div class="file-list" id="fileList"></div>
@@ -163,7 +184,7 @@
               <img class="hero-mark" src="mark.png" alt="" />
             </div>
             <h1 id="greeting">Good evening.</h1>
-            <p class="sub">I'm Orbit. I work on your laptop, remember what matters, and come to you when something needs you.</p>
+            <p class="sub">I'm <span class="aname">Orbit</span>. I work on your laptop, remember what matters, and come to you when something needs you.</p>
             <div class="chips" id="chips">
               <button class="chip">What's taking up space on my C drive?</button>
               <button class="chip">Plan my study week and remind me daily</button>
@@ -182,9 +203,9 @@
               <svg viewBox="0 0 24 24"><path d="M21 11.5 12.6 20a5.5 5.5 0 0 1-7.8-7.8l8.5-8.5a3.7 3.7 0 0 1 5.2 5.2l-8.5 8.5a1.8 1.8 0 0 1-2.6-2.6l7.8-7.8"/></svg>
             </button>
             <input type="file" id="fileInput" accept="image/*" multiple hidden />
-            <textarea id="input" rows="1" placeholder="Message Orbit…" autocomplete="off"></textarea>
+            <textarea id="input" rows="1" placeholder="Message Orbit…" data-name-ph="Message {name}…" autocomplete="off"></textarea>
             <button type="button" class="model-chip" id="modelChip" title="Model (switching takes over at once, even mid-task)"><svg viewBox="0 0 16 16"><path d="M9 1.5 3.5 9H8l-1 5.5L12.5 7H8z"/></svg><span>Main</span></button>
-            <button type="button" class="icon-btn live-btn" id="liveBtn" title="Live voice: talk with Orbit">
+            <button type="button" class="icon-btn live-btn" id="liveBtn" title="Live voice: talk with Orbit" data-name-title="Live voice: talk with {name}">
               <svg viewBox="0 0 24 24"><path d="M3 12h2M7 8.5v7M11 5v14M15 8.5v7M19 10.5v3M21 12h0"/></svg>
             </button>
             <button type="button" class="icon-btn mic" id="micBtn" title="Dictate a message">
@@ -196,7 +217,7 @@
               <svg class="i-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
             </button>
           </form>
-          <div class="hint" id="hint">Enter to send · Shift+Enter for a new line · Ctrl+Shift+O to summon Orbit anywhere</div>
+          <div class="hint" id="hint">Enter to send · Shift+Enter for a new line · Ctrl+Shift+O to summon <span class="aname">Orbit</span> anywhere</div>
         </div>
       </section>
 
@@ -210,7 +231,7 @@
           <div class="page-head">
             <div>
               <h2>Tasks</h2>
-              <p>What Orbit does on its own. Ask Orbit in chat to add one, like "remind me to revise physics every day at 6".</p>
+              <p>What <span class="aname">Orbit</span> does on its own. Ask <span class="aname">Orbit</span> in chat to add one, like "remind me to revise physics every day at 6".</p>
             </div>
           </div>
           <div class="task-list" id="taskList"></div>
@@ -225,7 +246,7 @@
               <h2>Memory</h2>
               <button class="ghost" id="openMemFolder">Open folder</button>
             </div>
-            <p class="muted">What Orbit knows about you. It's yours to read, edit or delete.</p>
+            <p class="muted">What <span class="aname">Orbit</span> knows about you. It's yours to read, edit or delete.</p>
             <div class="mem-list" id="memList"></div>
             <div class="new-mem">
               <input id="newMemName" placeholder="new-file.md" />
@@ -248,7 +269,7 @@
           <div class="page-head">
             <div>
               <h2>Passwords</h2>
-              <p>Logins Orbit can sign in with for you. Give one in chat ("my GitHub login is …") or add it here. They're encrypted on this PC, and Orbit types them straight into the site without ever reading them.</p>
+              <p>Logins <span class="aname">Orbit</span> can sign in with for you. Give one in chat ("my GitHub login is …") or add it here. They're encrypted on this PC, and <span class="aname">Orbit</span> types them straight into the site without ever reading them.</p>
             </div>
             <button class="primary" id="pwAdd" type="button">+ Add login</button>
           </div>
@@ -272,7 +293,7 @@
           <div class="page-head">
             <div>
               <h2>Connectors</h2>
-              <p>Give Orbit the keys to your other tools. Anything with an MCP server or an API can plug in, and its tools show up in every chat.</p>
+              <p>Give <span class="aname">Orbit</span> the keys to your other tools. Anything with an MCP server or an API can plug in, and its tools show up in every chat.</p>
             </div>
             <button class="ghost" id="cxRestart" type="button">Reconnect all</button>
           </div>
@@ -308,7 +329,7 @@
             </label>
             <label id="apiHeaderRow" hidden>Header or parameter name<input id="apiHeader" placeholder="X-API-Key" /></label>
             <label>Key <small class="muted" id="apiKeyHint">stored encrypted on this laptop</small><input id="apiKey" type="password" autocomplete="off" /></label>
-            <label>What Orbit can do with it <small class="muted">one or two lines, Orbit reads this</small><textarea id="apiDesc" rows="2"></textarea></label>
+            <label>What <span class="aname">Orbit</span> can do with it <small class="muted">one or two lines, <span class="aname">Orbit</span> reads this</small><textarea id="apiDesc" rows="2"></textarea></label>
             <div class="row"><button class="primary sm" id="apiSave" type="button">Save</button><button class="ghost sm" id="apiCancel" type="button">Cancel</button></div>
           </div>
         </div>
@@ -322,7 +343,7 @@
             <div>
               <div class="beta-pill">Beta</div>
               <h2>Osint</h2>
-              <p>Open-source intelligence, done by Orbit. Photos, places, products, domains, organisations and public figures, from public sources, with every claim cited.</p>
+              <p>Open-source intelligence, done by <span class="aname">Orbit</span>. Photos, places, products, domains, organisations and public figures, from public sources, with every claim cited.</p>
             </div>
           </div>
           <div class="osint-grid" id="osintGrid"></div>
@@ -333,7 +354,7 @@
       <!-- SETTINGS -->
       <section class="view" id="view-settings">
         <div class="page narrow">
-          <div class="page-head"><div><h2>Settings</h2><p>Give Orbit a brain, then tune how it works with you.</p></div></div>
+          <div class="page-head"><div><h2>Settings</h2><p>Give <span class="aname">Orbit</span> a brain, then tune how it works with you.</p></div></div>
 
           <div class="card">
             <h3>Brain</h3>
@@ -396,7 +417,7 @@
             <label>Model for voice tasks <span class="muted">(pick a fast one)</span><input id="s-voiceModel" list="modelList" placeholder="Fast model, else main model" /></label>
             <label>Voice transcription model<input id="s-transcribeModel" placeholder="whisper-1" /></label>
             <div class="backups">
-              <b>Backup models</b> <small class="muted">If a model hits its limit or goes down, Orbit switches to the next one by itself and carries on. Leave base URL and key empty to use the ones above, or fill them to use another provider.</small>
+              <b>Backup models</b> <small class="muted">If a model hits its limit or goes down, <span class="aname">Orbit</span> switches to the next one by itself and carries on. Leave base URL and key empty to use the ones above, or fill them to use another provider.</small>
               <div id="backupList"></div>
               <button class="ghost sm" id="addBackup" type="button">+ Add a backup model</button>
             </div>
@@ -422,7 +443,7 @@
 
           <div class="card">
             <h3>Browser</h3>
-            <p class="muted">Orbit drives its own window of a browser already on your laptop. Sign in there once and it stays signed in.</p>
+            <p class="muted"><span class="aname">Orbit</span> drives its own window of a browser already on your laptop. Sign in there once and it stays signed in.</p>
             <label>Browser
               <select id="s-browserChannel">
                 <option value="msedge">Microsoft Edge</option>
@@ -440,7 +461,7 @@
 
           <div class="card" id="liveCard">
             <h3>Live voice</h3>
-            <p class="muted">A real back-and-forth call with Orbit. It hears your tone, reacts, and you can cut in mid-sentence. The voice model talks; Orbit's own agent does the work behind it.</p>
+            <p class="muted">A real back-and-forth call with <span class="aname">Orbit</span>. It hears your tone, reacts, and you can cut in mid-sentence. The voice model talks; <span class="aname">Orbit</span>'s own agent does the work behind it.</p>
             <label>Voice engine
               <select id="s-liveEngine">
                 <option value="orbit">Orbit Voice (built in, free, runs on your laptop)</option>
@@ -449,7 +470,7 @@
               </select>
             </label>
             <div class="live-eng" data-eng="orbit">
-              <p class="muted small">Orbit hears you, thinks with your own model and speaks with a natural voice, all on this laptop. No voice key. The first call downloads about 200 MB once (Phonon voice + hearing); after that it works offline (except for the model you chose as its brain). Headphones keep it from hearing itself.</p>
+              <p class="muted small"><span class="aname">Orbit</span> hears you, thinks with your own model and speaks with a natural voice, all on this laptop. No voice key. The first call downloads about 200 MB once (Phonon voice + hearing); after that it works offline (except for the model you chose as its brain). Headphones keep it from hearing itself.</p>
               <label>Who speaks
                 <select id="s-orbitTts">
                   <option value="auto">Phonon (new, recommended): talks almost instantly, falls back to Windows voice if slow</option>
@@ -496,8 +517,8 @@
               </label>
               <label class="toggle"><input type="checkbox" id="s-orbitGpu" /><span></span>Use the GPU for the voice (experimental; leave off if it gets stuck)</label>
               <div class="row"><button type="button" class="ghost" id="voicePreview">Test voice</button><span class="muted small" id="voiceState"></span></div>
-              <label class="toggle"><input type="checkbox" id="s-talkFirst" /><span></span>Orbit talks first, then checks in by itself when it's quiet</label>
-              <label class="toggle"><input type="checkbox" id="s-autoCall" /><span></span>Start a voice call by itself when Orbit opens</label>
+              <label class="toggle"><input type="checkbox" id="s-talkFirst" /><span></span><em class="tg-t" data-name-text="{name} talks first, then checks in by itself when it's quiet">Orbit talks first, then checks in by itself when it's quiet</em></label>
+              <label class="toggle"><input type="checkbox" id="s-autoCall" /><span></span><em class="tg-t" data-name-text="Start a voice call by itself when {name} opens">Start a voice call by itself when Orbit opens</em></label>
               <div class="row"><button type="button" class="ghost" id="voiceCheck">Run voice check</button><span class="muted small">Tests speakers, mic, voice and brain, step by step</span></div>
               <div id="voiceCheckOut" class="vcheck"></div>
             </div>
@@ -547,11 +568,11 @@
 
           <div class="card">
             <h3>Phone</h3>
-            <p class="muted">When you're away from the laptop, Orbit pings your phone with questions, approvals and briefs. Tap an answer and it carries on.</p>
+            <p class="muted">When you're away from the laptop, <span class="aname">Orbit</span> pings your phone with questions, approvals and briefs. Tap an answer and it carries on.</p>
             <label>Ping my phone
               <select id="s-phoneWhen">
                 <option value="away">When I'm away from the laptop</option>
-                <option value="always">Whenever Orbit isn't on screen</option>
+                <option value="always" data-name-text="Whenever {name} isn't on screen">Whenever Orbit isn't on screen</option>
                 <option value="never">Never</option>
               </select>
             </label>
@@ -562,7 +583,7 @@
               <ol class="steps-mini">
                 <li>Install <b>ntfy</b> from the Play Store or App Store.</li>
                 <li>Tap <b>+</b> and subscribe to this topic: <code id="ntfyTopicShow"></code> <button class="link-btn" id="copyTopic" type="button">Copy</button></li>
-                <li>To message Orbit from your phone, also subscribe to <code id="ntfyReplyShow"></code> and post there.</li>
+                <li>To message <span class="aname">Orbit</span> from your phone, also subscribe to <code id="ntfyReplyShow"></code> and post there.</li>
               </ol>
               <details><summary class="muted">Advanced</summary>
                 <label>ntfy server<input id="s-ntfyServer" placeholder="https://ntfy.sh" /></label>
@@ -571,7 +592,7 @@
             </div>
 
             <div class="phone-channel">
-              <label class="toggle"><input type="checkbox" id="s-telegramEnabled" /><span></span><b>Telegram</b>&nbsp;<small class="muted">chat with Orbit from anywhere</small></label>
+              <label class="toggle"><input type="checkbox" id="s-telegramEnabled" /><span></span><b>Telegram</b>&nbsp;<small class="muted" data-name-text="chat with {name} from anywhere">chat with Orbit from anywhere</small></label>
               <ol class="steps-mini">
                 <li>In Telegram, message <b>@BotFather</b>, send <code>/newbot</code>, and copy the token it gives you.</li>
                 <li>Paste it here: <input id="s-telegramToken" type="password" placeholder="123456:ABC…" autocomplete="off" /></li>
@@ -584,7 +605,8 @@
 
           <div class="card">
             <h3>You</h3>
-            <label>What should Orbit call you?<input id="s-userName" placeholder="Affan" /></label>
+            <label>What should <span class="aname">Orbit</span> call you?<input id="s-userName" placeholder="Affan" /></label>
+            <label>Assistant name<input id="s-assistantName" maxlength="24" placeholder="Orbit" autocomplete="off" spellcheck="false" /><small class="muted">What should your assistant be called? Leave it empty for Orbit.</small></label>
           </div>
 
           <div class="card">
@@ -599,8 +621,8 @@
             <label>Daily token cap<input id="s-dailyTokenCap" type="number" min="0" step="100000" /><small class="muted" id="usageNote"></small></label>
             <label>Context budget (tokens per step)<input id="s-contextBudget" type="number" min="4000" step="2000" /><small class="muted">How much history Orbit sends the model each step. Lower it if your provider has a small input limit or daily allowance.</small></label>
             <label>Max steps per task<input id="s-maxSteps" type="number" min="3" max="100" /></label>
-            <label>Background tasks at once<input id="s-maxWorkers" type="number" min="1" max="6" /><small class="muted">Each one is a full copy of Orbit with its own browser tab. 3 is a good balance of speed and cost.</small></label>
-            <label class="toggle"><input type="checkbox" id="s-voiceReplies" /><span></span>Speak replies out loud in Orbit's voice</label>
+            <label>Background tasks at once<input id="s-maxWorkers" type="number" min="1" max="6" /><small class="muted">Each one is a full copy of <span class="aname">Orbit</span> with its own browser tab. 3 is a good balance of speed and cost.</small></label>
+            <label class="toggle"><input type="checkbox" id="s-voiceReplies" /><span></span><em class="tg-t" data-name-text="Speak replies out loud in {name}'s voice">Speak replies out loud in Orbit's voice</em></label>
             <label class="toggle"><input type="checkbox" id="s-closeToTray" /><span></span>Keep running in the tray when closed</label>
             <label class="toggle"><input type="checkbox" id="s-startWithWindows" /><span></span>Start with Windows</label>
             <label>Summon hotkey<input id="s-hotkey" placeholder="Control+Shift+O" /></label>
@@ -612,11 +634,18 @@
               <button data-theme="dark" class="sw sw-dark"><i></i>Dark</button>
               <button data-theme="light" class="sw sw-light"><i></i>Light</button>
             </div>
+            <label class="look-interface">Interface
+              <select id="s-interfaceStyle">
+                <option value="classic">Classic</option>
+                <option value="companion">Companion (an animated avatar that talks beside the chat)</option>
+              </select>
+              <small class="muted">Companion shows <span class="aname">Orbit</span> as an avatar whose lips move with the voice. Classic is the plain chat.</small>
+            </label>
           </div>
 
           <div class="card danger">
             <h3>Conversation</h3>
-            <p class="muted">Clearing the thread keeps Orbit's memory.</p>
+            <p class="muted">Clearing the thread keeps <span class="aname">Orbit</span>'s memory.</p>
             <button class="ghost danger-btn" id="clearThread">Clear chat history</button>
           </div>
 
@@ -640,6 +669,48 @@
             <button class="ghost" id="sbAdd" type="button">+ Share a folder or drive</button>
           </div>
 
+          <div class="card" id="plCard">
+            <h3>Phone Link <span class="beta-pill sm">Beta</span></h3>
+            <p class="muted">Use <span class="aname">Orbit</span> from your phone with the <b>Orbit Remote</b> app. Everything still runs on this PC: your API keys, files, browser and models never leave it. The phone is a remote screen, and everything between the two is end-to-end encrypted.</p>
+            <label class="toggle"><input type="checkbox" id="plOn" /><span></span>Turn on Phone Link</label>
+            <div id="plBody" hidden>
+              <div class="pl-routes" id="plRoutes"></div>
+              <div class="pl-pair" id="plPair">
+                <button class="primary" id="plPairBtn" type="button">Pair a phone</button>
+                <div class="pl-qr" id="plQr" hidden>
+                  <img id="plQrImg" alt="Pairing QR code" />
+                  <div class="pl-qr-side">
+                    <b>Scan this with Orbit Remote</b>
+                    <p class="muted sm">Or type this code in the app (when short codes are on):</p>
+                    <div class="pl-code" id="plCode"></div>
+                    <p class="muted sm" id="plExpires"></p>
+                    <div class="row"><button class="ghost sm" id="plCopyLink" type="button">Copy pairing link</button><button class="ghost sm" id="plCancel" type="button">Cancel</button></div>
+                  </div>
+                </div>
+              </div>
+              <h4 class="sb-h">Paired phones</h4>
+              <div id="plDevices" class="pl-devices"></div>
+              <details class="pl-adv"><summary class="muted">Connection</summary>
+                <label class="toggle"><input type="checkbox" id="plLan" /><span></span>Same network: phones on this Wi-Fi connect directly</label>
+                <label>When the phone is on another network
+                  <select id="plRemote">
+                    <option value="cloudflare">Cloudflare quick tunnel (free, no account) + ntfy rendezvous</option>
+                    <option value="relay">My own relay (relay/ in the Orbit repo)</option>
+                    <option value="off">Don't connect from other networks</option>
+                  </select>
+                </label>
+                <div id="plRelayBox">
+                  <label>Relay address<input id="plRelayUrl" placeholder="wss://relay.example.com" autocomplete="off" spellcheck="false" /></label>
+                  <label>Relay token <small class="muted">optional; set the same RELAY_TOKEN on the relay</small><input id="plRelayToken" type="password" placeholder="Saved tokens stay hidden" autocomplete="off" /><small class="muted" id="plRelayTokenState"></small></label>
+                </div>
+                <label class="toggle"><input type="checkbox" id="plNoThird" /><span></span>Never use third-party services (Cloudflare, ntfy.sh) for Phone Link</label>
+                <label>Rendezvous server (ntfy) <small class="muted">only an encrypted note goes here</small><input id="plRz" placeholder="https://ntfy.sh" autocomplete="off" spellcheck="false" /></label>
+                <label>Port<input id="plPort" type="number" min="1024" max="65535" /></label>
+                <div class="row"><button class="ghost" id="plSave" type="button">Save connection</button><span class="muted" id="plSaved"></span></div>
+              </details>
+            </div>
+          </div>
+
           <div class="card">
             <h3>Updates</h3>
             <p class="muted">Orbit updates itself from GitHub. Your settings, chats, memory, projects and tasks stay exactly as they are.</p>
@@ -661,6 +732,18 @@
   <div class="live" id="live" data-state="idle" aria-live="polite">
     <div class="live-bg"></div>
     <div class="live-top"><span class="live-badge"><i></i>Live</span><span class="live-engine" id="liveEngine"></span></div>
+    <div class="cmp-live" aria-hidden="true">
+      <div class="cmp-glow"></div>
+      <div class="cmp-avatar" data-frame="neutral" aria-hidden="true">
+        <img data-f="neutral" src="companion/neutral.png" alt="" draggable="false" />
+        <img data-f="a" src="companion/a.png" alt="" draggable="false" />
+        <img data-f="o" src="companion/o.png" alt="" draggable="false" />
+        <img data-f="e" src="companion/e.png" alt="" draggable="false" />
+        <img data-f="blink" src="companion/blink.png" alt="" draggable="false" />
+        <img data-f="laugh" src="companion/laugh.png" alt="" draggable="false" />
+      </div>
+      <div class="cmp-live-name aname">Orbit</div>
+    </div>
     <div class="orb-wrap">
       <div class="orb-ring r1"><b></b></div>
       <div class="orb-ring r2"><b></b></div>
@@ -699,11 +782,13 @@
   <script src="vendor/vosk.js"></script>
   <script src="wake.js"></script>
   <script src="markdown.js"></script>
+  <script src="companion.js"></script>
   <script src="voice/voice.js"></script>
   <script src="live.js"></script>
   <script src="app.js"></script>
   <script src="hub.js"></script>
   <script src="connect.js"></script>
   <script src="passwords.js"></script>
+  <script src="phonelink.js"></script>
 </body>
 </html>

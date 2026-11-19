@@ -1,22 +1,24 @@
 {
   "name": "orbit",
   "productName": "Orbit",
-  "version": "0.13.0",
+  "version": "0.13.1",
   "description": "Orbit, your personal desktop agent.",
   "main": "src/main.js",
   "author": "Affan Mohammed",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "dist:win": "node build/bundle-voice.js && node build/patch-nsis.js && electron-builder --win nsis zip --x64",
+    "dist:win": "node build/bundle-voice.js && node build/bundle-cloudflared.js && node build/patch-nsis.js && electron-builder --win nsis zip --x64",
     "bundle:voice": "node build/bundle-voice.js",
-    "prestart": "node build/bundle-voice.js"
+    "prestart": "node build/bundle-voice.js",
+    "bundle:cloudflared": "node build/bundle-cloudflared.js"
   },
   "devDependencies": {
     "@huggingface/transformers": "^4.3.2",
     "electron": "^38.0.0",
     "electron-builder": "^26.0.0",
     "esbuild": "^0.28.2",
+    "jsqr": "^1.4.0",
     "kokoro-js": "^1.2.1",
     "resedit": "^2.0.3",
     "vosk-browser": "^0.0.8"
@@ -57,12 +59,23 @@
     },
     "asarUnpack": [
       "assets/vosk-model-small-en-us-0.15.tar.gz"
+    ],
+    "extraResources": [
+      {
+        "from": "build/cloudflared/win32-x64",
+        "to": "cloudflared",
+        "filter": [
+          "cloudflared.exe"
+        ]
+      }
     ]
   },
   "dependencies": {
     "jszip": "^3.10.2",
     "playwright-core": "^1.64.1",
     "pptxgenjs": "^4.0.1",
+    "qrcode": "^1.5.4",
+    "tweetnacl": "^1.0.3",
     "ws": "^8.22.0"
   }
 }

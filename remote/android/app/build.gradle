@@ -1,0 +1,29 @@
+// Orbit Remote. Run `node remote/build.js` first (it fills src/main/assets/www from the desktop renderer).
+// No dependencies: the app is one Activity around a WebView. Release signing reads env vars:
+//   ORBIT_KS (keystore path), ORBIT_KS_PASS, ORBIT_KEY_ALIAS, ORBIT_KEY_PASS
+plugins { id 'com.android.application' }
+android {
+    namespace 'com.affan.orbit.remote'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'com.affan.orbit.remote'
+        minSdk 29
+        targetSdk 35
+        versionCode 1
+        versionName '0.1.0'
+    }
+    signingConfigs {
+        release {
+            if (System.getenv('ORBIT_KS')) {
+                storeFile file(System.getenv('ORBIT_KS'))
+                storePassword System.getenv('ORBIT_KS_PASS')
+                keyAlias System.getenv('ORBIT_KEY_ALIAS') ?: 'orbit-remote'
+                keyPassword System.getenv('ORBIT_KEY_PASS') ?: System.getenv('ORBIT_KS_PASS')
+            }
+        }
+    }
+    buildTypes {
+        release { minifyEnabled false; if (System.getenv('ORBIT_KS')) signingConfig signingConfigs.release }
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_11; targetCompatibility JavaVersion.VERSION_11 }
+}

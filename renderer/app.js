@@ -18,6 +18,8 @@
     repeat: '<svg viewBox="0 0 24 24"><path d="M17 3.5l3 3-3 3M20 6.5H8a4 4 0 0 0-4 4v1M7 20.5l-3-3 3-3M4 17.5h12a4 4 0 0 0 4-4v-1"/></svg>',
   };
   const avatar = () => '<div class="avatar"><img src="mark.png" alt="" /></div>';
+  // The assistant's name (Settings → You). The app itself stays "Orbit" (installer, About, updates).
+  const N = () => window.OrbitAssistantName || 'Orbit';
   const escapeHtml = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
   let settings = {};
@@ -56,6 +58,19 @@
     const part = h < 5 ? 'Up late' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
     $('#greeting').textContent = settings.userName ? `${part}, ${settings.userName}.` : `${part}.`;
   }
+  function assistantName(s) { return String((s && s.assistantName) || '').replace(/\s+/g, ' ').trim().slice(0, 24).trim() || 'Orbit'; }
+  function applyName(n) {
+    window.OrbitAssistantName = n;
+    $$('.aname').forEach(e => { if (e.textContent !== n) e.textContent = n; });
+    $$('[data-name-ph]').forEach(e => (e.placeholder = e.dataset.namePh.split('{name}').join(n)));
+    $$('[data-name-title]').forEach(e => (e.title = e.dataset.nameTitle.split('{name}').join(n)));
+    $$('[data-name-text]').forEach(e => (e.textContent = e.dataset.nameText.split('{name}').join(n)));
+    $('#input').placeholder = scope === 'main' ? `Message ${n}…` : `Message ${n} about ${$('#scopeName').textContent || 'this project'}…`;
+    document.title = n;
+    if (busy) $('#tbStatus').innerHTML = `<span class="dot"></span>${escapeHtml(n)} is working`;
+  }
+  // Classic is the plain chat; Companion adds the talking avatar beside it (renderer/companion.js).
+  function applyInterface(style) { if (window.OrbitCompanion) OrbitCompanion.setEnabled(style === 'companion'); }
   function applyTheme(t) {
     document.documentElement.dataset.theme = t || 'dark';
     $$('#themePick .sw').forEach(b => b.classList.toggle('active', b.dataset.theme === (t || 'dark')));
@@ -63,7 +78,7 @@
   function setBusy(b) {
     busy = b;
     document.body.classList.toggle('busy', b);
-    $('#tbStatus').innerHTML = b ? '<span class="dot"></span>Orbit is working' : '';
+    $('#tbStatus').innerHTML = b ? `<span class="dot"></span>${escapeHtml(N())} is working` : '';
     if (!b && turn) { $('.thinking', turn)?.remove(); turn = null; }
   }
 
@@ -82,7 +97,7 @@
     if (el.classList.contains('editing')) return;
     el.classList.add('editing');
     const box = document.createElement('div'); box.className = 'u-editbox';
-    box.innerHTML = `<textarea rows="3"></textarea><div class="u-editbar"><span>Orbit redoes its answer from here.</span><button class="ghost sm" data-x>Cancel</button><button class="primary sm" data-ok>Save and send</button></div>`;
+    box.innerHTML = `<textarea rows="3"></textarea><div class="u-editbar"><span>${N()} redoes its answer from here.</span><button class="ghost sm" data-x>Cancel</button><button class="primary sm" data-ok>Save and send</button></div>`;
     const ta = box.querySelector('textarea'); ta.value = text;
     const bubble = el.querySelector('.bubble'); bubble.after(box); bubble.hidden = true;
     ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
@@ -112,7 +127,7 @@
     hideWelcome();
     const el = document.createElement('div');
     el.className = 'msg assistant';
-    el.innerHTML = `${avatar()}<div class="body">${tag ? `<div class="proactive-tag">${ICONS.bell.replace('<svg', '<svg style="width:12px;height:12px"')}${escapeHtml(tag)}</div>` : ''}<div class="thinking"><i></i><i></i><i></i></div></div>`;
+    el.innerHTML = `${avatar()}<div class="body"><div class="who aname">${escapeHtml(N())}</div>${tag ? `<div class="proactive-tag">${ICONS.bell.replace('<svg', '<svg style="width:12px;height:12px"')}${escapeHtml(tag)}</div>` : ''}<div class="thinking"><i></i><i></i><i></i></div></div>`;
     $('#messages').appendChild(el);
     scrollDown(true);
     return el;
@@ -145,13 +160,13 @@
   function addListen(mdEl, text) {
     if (!mdEl || !text || mdEl.querySelector('.listen')) return;
     const b = document.createElement('button');
-    b.className = 'listen'; b.title = "Listen in Orbit's voice";
+    b.className = 'listen'; b.title = `Listen in ${N()}'s voice`;
     b.innerHTML = '<svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12"/></svg>';
     b.onclick = async () => {
       if (b.classList.contains('on')) { OrbitVoice.stopSay(); b.classList.remove('on'); return; }
       document.querySelectorAll('.listen.on').forEach(x => x.classList.remove('on'));
       b.classList.add('on', 'loading');
-      if (!OrbitVoice.ready) toast("Loading Orbit's voice…");
+      if (!OrbitVoice.ready) toast(`Loading ${N()}'s voice…`);
       await speak(text); b.classList.remove('loading');
       const t = setInterval(() => { if (!OrbitVoice.speaking && !b.classList.contains('loading')) { setTimeout(() => { if (!OrbitVoice.speaking) { b.classList.remove('on'); clearInterval(t); } }, 900); } }, 500);
     };
@@ -169,7 +184,7 @@
     rafPending.add(id);
     requestAnimationFrame(() => {
       rafPending.delete(id);
-      const s = segs.get(id); if (!s) return;
+      const s = segs.get(id); if (!s || s.done) return; // a late frame must not bring the cursor back after the reply ended
       s.el.innerHTML = md(s.text); s.el.classList.add('cursor');
       scrollDown();
     });
@@ -198,7 +213,7 @@
   const GLOBAL = new Set(['tasks_changed', 'memory_changed', 'speak', 'panels_changed', 'projects_changed', 'updates_changed']);
   api.on('agent:event', (e) => {
     if (e.type === 'computer_log' || e.type === 'sandbox_state') { window.__sbEvent && window.__sbEvent(e); return; }
-    if (e.type === 'model_switch') { toast(e.reason === 'picked' ? `Now using ${e.model}. The task carries on from where it was.` : `${e.from} isn't answering right now, so Orbit switched to ${e.model}.`); return; }
+    if (e.type === 'model_switch') { toast(e.reason === 'picked' ? `Now using ${e.model}. The task carries on from where it was.` : `${e.from} isn't answering right now, so ${N()} switched to ${e.model}.`); return; }
     if (e.type === 'models_changed') { paintModelChip(); return; }
     if (e.type === 'thread_reset') { if (e.scope === scope) openScope(scope); return; }
     if (e.type === 'orbiter_answered') { $('#orbAsk')?.classList.remove('show'); return; }
@@ -216,7 +231,7 @@
     if (e.type === 'busy') busyMap.main = e.busy;
     if (scope !== 'main') {
       if (e.type === 'worker') { workers.set(e.id, { ...(workers.get(e.id) || {}), ...e }); if (['done', 'failed', 'stopped'].includes(e.state)) workers.delete(e.id); renderTray(); }
-      if (e.type === 'approval' || e.type === 'question') toast('Orbit needs your answer in Chat.');
+      if (e.type === 'approval' || e.type === 'question') toast(`${N()} needs your answer in Chat.`);
       return;
     }
     const lane = e.lane && e.lane !== 'main' ? e.lane : null;
@@ -252,14 +267,15 @@
       case 'assistant_end': {
         let s = segs.get(e.id);
         if (!s) { const d = document.createElement('div'); d.className = 'md'; placeBeforeThinking(d); s = { el: d, text: '' }; segs.set(e.id, s); }
-        s.text = e.text; s.el.innerHTML = md(e.text); s.el.classList.remove('cursor'); wireCode(s.el);
-        if (!e.interim) addListen(s.el, e.text);
+        s.text = e.text; s.el.innerHTML = md(e.text); s.el.classList.remove('cursor'); wireCode(s.el); if (!e.interim) s.done = true;
+        if (!e.interim) { addListen(s.el, e.text); if (window.OrbitCompanion) OrbitCompanion.react(e.text); }
         if (!e.interim) $('.thinking', turn || document.createElement('div'))?.remove();
         scrollDown();
         break;
       }
       case 'assistant_full': {
         if (turn) { $('.thinking', turn)?.remove(); const d = document.createElement('div'); d.className = 'md'; d.innerHTML = md(e.text); $('.body', turn).appendChild(d); wireCode(d); addListen(d, e.text); }
+        if (window.OrbitCompanion) OrbitCompanion.react(e.text);
         else addAssistantStatic(e.text, e.proactive);
         scrollDown(true);
         break;
@@ -398,7 +414,7 @@
         btn.classList.add('working');
         try {
           const blob = new Blob(chunks, { type: 'audio/webm' });
-          const text = (await api.transcribe(await blob.arrayBuffer(), 'audio/webm')).trim().replace(/^(hey|okay|hi),?\s+orbit[,.!]?\s*/i, '');
+          const text = (await api.transcribe(await blob.arrayBuffer(), 'audio/webm')).trim().replace(wakeRe(), '');
           if (text) { input.value = text; autosize(); $('#composer').requestSubmit(); }
           else toast("I didn't catch that.");
         } catch (err) { toast(String(err.message || err).replace(/^Error invoking remote method[^:]*:\s*/, '')); }
@@ -437,6 +453,11 @@
     toast('Live voice needs a Gemini or OpenAI key first.');
     show('settings'); setTimeout(() => $('#liveCard').scrollIntoView({ behavior: 'smooth', block: 'center' }), 120);
   });
+  // "Hey Orbit, …" (or "Hey <your assistant's name>, …") is dropped from dictation.
+  function wakeRe() {
+    const n = N().toLowerCase(); const esc = n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`^(hey|okay|hi),?\\s+${n === 'orbit' ? 'orbit' : `(?:orbit|${esc})`}[,.!]?\\s*`, 'i');
+  }
   // Read aloud in Orbit's own voice; falls back to the Windows voice if it can't load.
   async function speak(text) {
     if (window.OrbitVoice && (await OrbitVoice.say(text))) return;
@@ -446,6 +467,7 @@
     const v = speechSynthesis.getVoices().find(v => /Natural|Aria|Jenny|Guy|Google UK English/i.test(v.name));
     if (v) u.voice = v;
     u.rate = 1.03;
+    if (window.OrbitCompanion) u.onboundary = () => OrbitCompanion.boundary(); // lip sync for the Windows voice
     speechSynthesis.cancel(); speechSynthesis.speak(u);
   }
 
@@ -536,16 +558,16 @@
     $('#drawer').classList.remove('open');
     if (scope === 'main') {
       $('#welcome').classList.remove('gone');
-      input.placeholder = 'Message Orbit…';
+      input.placeholder = `Message ${N()}…`;
       renderThread(await api.getThread());
     } else {
       $('#welcome').classList.add('gone');
       const p = await api.projects.get(scope);
       if (!p) { scope = 'main'; return openScope('main'); }
       window.dispatchEvent(new CustomEvent('orbit-scope', { detail: p }));
-      input.placeholder = `Message Orbit about ${p.name}…`;
+      input.placeholder = `Message ${N()} about ${p.name}…`;
       const t = await api.projects.thread(scope);
-      if (!t.length) $('#messages').innerHTML = `<div class="proj-empty"><span class="proj-mono big" style="--c:${p.color}">${escapeHtml(p.name.slice(0, 1).toUpperCase())}</span><h2>${escapeHtml(p.name)}</h2><p>${escapeHtml(p.about || 'A space of its own: chat here, and Orbit keeps the brief and files for this project.')}</p></div>`;
+      if (!t.length) $('#messages').innerHTML = `<div class="proj-empty"><span class="proj-mono big" style="--c:${p.color}">${escapeHtml(p.name.slice(0, 1).toUpperCase())}</span><h2>${escapeHtml(p.name)}</h2><p>${escapeHtml(p.about || `A space of its own: chat here, and ${N()} keeps the brief and files for this project.`)}</p></div>`;
       renderThread(t);
     }
     for (const { scope: s, e } of pendingCards.values()) if (s === scope) handleEvent(e);
@@ -569,7 +591,7 @@
   async function loadTasks() {
     const tasks = await api.getTasks();
     const el = $('#taskList');
-    if (!tasks.length) { el.innerHTML = '<div class="empty">No tasks yet. Ask Orbit to remind you of something.</div>'; return; }
+    if (!tasks.length) { el.innerHTML = `<div class="empty">No tasks yet. Ask ${escapeHtml(N())} to remind you of something.</div>`; return; }
     el.innerHTML = tasks.map((t, i) => `
       <div class="task ${t.enabled ? '' : 'off'}" style="animation-delay:${i * 40}ms">
         <div class="t-ico">${t.id === 'morning-brief' ? ICONS.sun : t.kind === 'interval' ? ICONS.repeat : ICONS.clock}</div>
@@ -615,7 +637,7 @@
   $('#openMemFolder').onclick = () => api.openMemoryFolder();
 
   // ---------- settings ----------
-  const FIELDS = ['sandboxRamGb', 'orbitVoice', 'orbitStt', 'orbitTts', 'orbitPhononVoice', 'orbitWinVoice', 'orbitPauseMs', 'liveEngine', 'liveGeminiVoice', 'liveOpenaiVoice', 'baseUrl', 'model', 'fastModel', 'voiceModel', 'browserChannel', 'phoneWhen', 'phoneIdleMinutes', 'ntfyServer', 'transcribeModel', 'userName', 'approvalMode', 'dailyTokenCap', 'contextBudget', 'maxSteps', 'chatThinking', 'orbiterThinking', 'orbiterHandoffMode', 'hotkey', 'maxWorkers', 'imageModel', 'imageBaseUrl', 'googleClientId', 'visionModel'];
+  const FIELDS = ['assistantName', 'interfaceStyle', 'sandboxRamGb', 'orbitVoice', 'orbitStt', 'orbitTts', 'orbitPhononVoice', 'orbitWinVoice', 'orbitPauseMs', 'liveEngine', 'liveGeminiVoice', 'liveOpenaiVoice', 'baseUrl', 'model', 'fastModel', 'voiceModel', 'browserChannel', 'phoneWhen', 'phoneIdleMinutes', 'ntfyServer', 'transcribeModel', 'userName', 'approvalMode', 'dailyTokenCap', 'contextBudget', 'maxSteps', 'chatThinking', 'orbiterThinking', 'orbiterHandoffMode', 'hotkey', 'maxWorkers', 'imageModel', 'imageBaseUrl', 'googleClientId', 'visionModel'];
   const TOGGLES = ['sandboxOn', 'autoUpdate', 'talkFirst', 'autoCall', 'orbitGpu', 'wakeOpensLive', 'voiceReplies', 'closeToTray', 'startWithWindows', 'wakeWord', 'ntfyEnabled', 'telegramEnabled', 'osintBeta'];
   // Edits you haven't saved yet survive any refresh of this screen (a new ntfy topic,
   // Telegram pairing, Google connect...). Before, those refreshes wiped the whole form.
@@ -640,10 +662,11 @@
     syncLiveEngine();
     $('#keyState').textContent = settings.hasKey ? `Saved and encrypted on this laptop (${settings.keyPreview}). Paste a new one to replace it.` : 'No key saved yet.';
     const u = await api.getUsage();
-    $('#usageNote').textContent = `Used today: ${u.tokensToday.toLocaleString()} tokens. Orbit pauses when it hits the cap.`;
+    $('#usageNote').textContent = `Used today: ${u.tokensToday.toLocaleString()} tokens. ${N()} pauses when it hits the cap.`;
     const info = await api.info();
     $('#appInfo').textContent = `Orbit ${info.version}`;
     applyTheme(settings.theme);
+    applyName(assistantName(settings)); applyInterface(settings.interfaceStyle);
     $('#ntfyTopicShow').textContent = settings.ntfyTopic || '(save to create)';
     $('#ntfyReplyShow').textContent = settings.ntfyTopic ? settings.ntfyTopic + '-reply' : '';
     $('#pairCode').textContent = settings.telegramPairCode || '------';
@@ -807,7 +830,7 @@
     try {
       const t0 = Date.now(); await OrbitVoice.ensure(); off();
       OrbitVoice.setPhononVoice(settings.orbitPhononVoice || 'Easton');
-      await OrbitVoice.say(`Hey${settings.userName ? ' ' + settings.userName : ''}, this is Orbit's own voice.`);
+      await OrbitVoice.say(`Hey${settings.userName ? ' ' + settings.userName : ''}, this is ${N()}'s own voice.`);
       done(d, true, 'Orbit voice', `${OrbitVoice.engine} on ${OrbitVoice.device}, ready in ${Math.round((Date.now() - t0) / 1000)} s${OrbitVoice.firstMs ? `, first sound ${OrbitVoice.firstMs} ms` : ''}${OrbitVoice.rtf ? `, ${(1 / OrbitVoice.rtf).toFixed(1)}× real time` : ''}.`);
     } catch (e) { off(); done(d, false, 'Orbit voice', e.message); }
     // 4. Brain
@@ -880,6 +903,8 @@
     $('#modelState').style.color = 'var(--ok)';
     if (!$('#s-model').value && r.models.length) $('#s-model').focus();
   };
+  // Interface style applies the moment you pick it, like the theme (and is saved with the rest too).
+  $('#s-interfaceStyle').addEventListener('change', (e) => { const v = e.target.value === 'companion' ? 'companion' : 'classic'; applyInterface(v); settings.interfaceStyle = v; api.saveSettings({ interfaceStyle: v }); });
   $$('#themePick .sw').forEach(b => b.onclick = () => { applyTheme(b.dataset.theme); settings.theme = b.dataset.theme; api.saveSettings({ theme: b.dataset.theme }); });
   async function saveSettings() {
     const out = {};
@@ -935,13 +960,16 @@
   (async function boot() {
     settings = await api.getSettings();
     applyTheme(settings.theme);
+    applyName(assistantName(settings)); applyInterface(settings.interfaceStyle);
+    if (window.OrbitVoice && window.OrbitCompanion) OrbitVoice.onVoice((m) => { if (m.type === 'win_boundary') OrbitCompanion.boundary(); });
+    $('#cmpTalk').onclick = () => startLive();
     greeting();
     syncWake();
     renderThread(await api.getThread());
     scrollDown(true);
     if (!settings.hasKey) {
       const el = newTurn(); $('.thinking', el).remove();
-      $('.body', el).insertAdjacentHTML('beforeend', `<div class="md"><p>Hi${settings.userName ? ' ' + escapeHtml(settings.userName) : ''}, I'm Orbit. Give me a brain first: add your base URL, API key and model in Settings, and I'm ready.</p></div><div style="margin-top:10px"><button class="primary sm" id="goSetup">Open Settings</button></div>`);
+      $('.body', el).insertAdjacentHTML('beforeend', `<div class="md"><p>Hi${settings.userName ? ' ' + escapeHtml(settings.userName) : ''}, I'm ${escapeHtml(N())}. Give me a brain first: add your base URL, API key and model in Settings, and I'm ready.</p></div><div style="margin-top:10px"><button class="primary sm" id="goSetup">Open Settings</button></div>`);
       $('#goSetup').onclick = () => show('settings');
       $('#welcome').classList.remove('gone');
     }

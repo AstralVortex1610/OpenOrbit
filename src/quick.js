@@ -78,10 +78,14 @@ async function run({ action, target, query, amount } = {}, { open } = {}) {
 }
 
 // Turn plain words into a quick action, or null when it needs the full agent.
-function parse(text) {
+// name: the assistant's custom name (Settings → You), accepted as a wake word alongside "orbit".
+const escRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function parse(text, name) {
+  const n = String(name || '').toLowerCase().trim();
+  const who = n && n !== 'orbit' ? `(?:orbit|${escRe(n)})` : 'orbit';
   let t = String(text || '').toLowerCase().trim()
     .replace(/[.!?]+$/g, '')
-    .replace(/^(hey |ok |okay )?orbit[, ]*/, '')
+    .replace(new RegExp(`^(hey |ok |okay )?${who}[, ]*`), '')
     .replace(/^(can you|could you|would you|please|pls|plz|just|bro|yo|quickly)\s+/g, '')
     .replace(/^(can you|could you|please|pls|just)\s+/g, '')
     .replace(/\s+(please|pls|plz|for me|bro|now|real quick)$/g, '').trim();

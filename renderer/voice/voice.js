@@ -46,7 +46,7 @@
       const s = await api.getSettings();
       const mode = ttsMode(s);
       winName = s.orbitWinVoice || '';
-      status({ text: 'Waking up Orbit\'s voice…' });
+      status({ text: `Waking up ${window.OrbitAssistantName || 'Orbit'}'s voice…` });
       // CPU by default: on laptops without a real graphics card the GPU path is slower and can hang.
       const cpu = !s.orbitGpu || localStorage.getItem('orbitVoiceCpu') === '1';
       const run = async (c) => {
@@ -120,15 +120,20 @@
     files.set(p.file, p);
     let loaded = 0, total = 0; for (const f of files.values()) { loaded += f.done ? f.total : f.loaded; total += f.total; }
     const allDone = [...files.values()].every(f => f.done);
-    status({ text: allDone ? 'Downloaded. Starting Orbit\'s voice (first start can take a minute)…' : `Downloading Orbit's voice, one time only: ${Math.round(loaded / 1e6)} of ${Math.round(total / 1e6)} MB`, progress: total ? loaded / total : 0 });
+    status({ text: allDone ? `Downloaded. Starting ${window.OrbitAssistantName || 'Orbit'}'s voice (first start can take a minute)…` : `Downloading ${window.OrbitAssistantName || 'Orbit'}'s voice, one time only: ${Math.round(loaded / 1e6)} of ${Math.round(total / 1e6)} MB`, progress: total ? loaded / total : 0 });
   });
 
   // ---------- chat read-aloud player ----------
-  let ctx = null, next = 0, srcs = [], current = 0;
+  let ctx = null, out = null, next = 0, srcs = [], current = 0;
   function playFloat(f) {
-    if (!ctx) ctx = new AudioContext({ sampleRate: 24000 });
+    if (!ctx) {
+      ctx = new AudioContext({ sampleRate: 24000 });
+      // One unity-gain bus to the speakers, so the companion avatar can read the voice's level.
+      out = ctx.createGain(); out.connect(ctx.destination);
+      if (window.OrbitCompanion) OrbitCompanion.onAudioNode(out);
+    }
     const b = ctx.createBuffer(1, f.length, 24000); b.copyToChannel(f, 0);
-    const src = ctx.createBufferSource(); src.buffer = b; src.connect(ctx.destination);
+    const src = ctx.createBufferSource(); src.buffer = b; src.connect(out);
     const t = Math.max(ctx.currentTime + 0.03, next); src.start(t); next = t + b.duration;
     srcs.push(src); src.onended = () => { srcs = srcs.filter(x => x !== src); };
   }

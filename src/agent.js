@@ -12,6 +12,7 @@ const { OSINT_PROMPT } = require('./osint');
 const { Connectors } = require('./connectors');
 const { Google } = require('./google');
 const { Passwords } = require('./passwords');
+const { assistantNameOf } = require('./store');
 const { Hub, install: installHub } = require('./hub');
 
 const PARALLEL_SAFE = new Set(['glob', 'grep', 'web_fetch', 'orbiter_status', 'password_list', 'read_file', 'list_dir', 'web_search', 'fetch_url', 'memory_list', 'memory_read', 'skill_read', 'list_tasks', 'windows_list', 'screenshot', 'task_status', 'gmail_search', 'gmail_read', 'calendar_events', 'start_task', 'view_image', 'connectors_list', 'image_metadata', 'place_lookup', 'whois_lookup', 'dns_lookup', 'subdomains', 'ip_lookup', 'site_tech', 'wayback', 'org_lookup', 'public_figure']);
@@ -193,8 +194,9 @@ class Agent {
 
   _recentTranscript(n = 10) {
     const name = this.store.getSettings().userName || 'User';
+    const me = assistantNameOf(this.store.getSettings());
     return this.store.getThread().filter(m => m.ui && typeof (m.display || m.content) === 'string').slice(-n)
-      .map(m => `${m.role === 'user' ? name : 'Orbit'}: ${String(m.display || m.content).replace(/\n\n\(Sent from a Live voice call[\s\S]*$/, '').slice(0, 500)}`).join('\n');
+      .map(m => `${m.role === 'user' ? name : me}: ${String(m.display || m.content).replace(/\n\n\(Sent from a Live voice call[\s\S]*$/, '').slice(0, 500)}`).join('\n');
   }
 
   statusText() {
@@ -331,7 +333,7 @@ class Agent {
     const system = `${this._systemPrompt('side')}
 
 # Right now
-You and the main task are the same Orbit sharing one conversation. The main task is busy, so this message reached you, its quick side lane. Never say you don't know what the user means when the message could be about the running task: it almost always is.
+You and the main task are the same ${assistantNameOf(this.store.getSettings())} sharing one conversation. The main task is busy, so this message reached you, its quick side lane. Never say you don't know what the user means when the message could be about the running task: it almost always is.
 
 Decide first:
 1. About the running task in any way (a follow-up, an extra detail, a correction, an instruction or preference such as "don't…", "stop doing…", "instead…", "never…", "also…", "and…", "it", "that", "same thing but…", a question about its result): call forward_to_main with the user's words, then reply in a few words that you've added it to what you're doing ("Got it, adding that."). Do not try to do it yourself.
@@ -617,7 +619,8 @@ ${this._recentTranscript(14) || '(none)'}
     const files = this.store.listMemory().map(f => `- ${f.name}`).join('\n');
     const skills = this.store.listSkills().map(k => `- ${k.name}: ${k.title}${k.when ? ` (when: ${k.when})` : ''}`).join('\n') || '- none yet';
     const now = new Date();
-    return `You are Orbit, a personal agent that lives on ${s.userName || 'the user'}'s laptop. You are not a chatbot waiting for prompts: you act, you remember, and you reach out when something needs them.
+    const me = assistantNameOf(s);
+    return `You are ${me}, a personal agent that lives on ${s.userName || 'the user'}'s laptop${me !== 'Orbit' ? ` (built on Orbit, the desktop agent app; the user named you ${me}, so that is your name)` : ''}. You are not a chatbot waiting for prompts: you act, you remember, and you reach out when something needs them.
 
 # Voice
 - Answer first. Short sentences, contractions, plain words. Usually under 80 words unless they asked for depth.

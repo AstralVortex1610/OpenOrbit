@@ -80,7 +80,7 @@
     const key = $('#apiKey').value.trim(); if (key) row.apiKey = key;
     const list = (S.apiConnectors || []).slice();
     if (editingApi) { const i = list.findIndex(x => x.id === editingApi); list[i] = { ...list[i], ...row, id: editingApi }; } else list.push(row);
-    await saveApis(list); $('#cxApiForm').hidden = true; A().toast(`${row.name} connected. Orbit can use it in chat now.`);
+    await saveApis(list); $('#cxApiForm').hidden = true; A().toast(`${row.name} connected. ${window.OrbitAssistantName || 'Orbit'} can use it in chat now.`);
   };
 
   // ----- MCP form -----

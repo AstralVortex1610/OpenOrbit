@@ -14,6 +14,7 @@
 // Audio: the renderer captures mic PCM16 (16 kHz for Gemini, 24 kHz for OpenAI) and plays PCM16 at 24 kHz.
 const WebSocket = require('ws');
 const quick = require('./quick');
+const { assistantNameOf } = require('./store');
 
 const GEMINI_URL = process.env.ORBIT_GEMINI_URL || 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
 const OPENAI_URL = process.env.ORBIT_OPENAI_URL || 'wss://api.openai.com/v1/live/sessions';
@@ -87,13 +88,14 @@ class Live {
   _instructions() {
     const s = this.store.getSettings();
     const name = s.userName || 'the user';
+    const me = assistantNameOf(s);
     const user = (this.store.readMemory('USER.md') || '').slice(0, 2500);
     const recent = this.store.getThread().filter(m => m.ui && typeof m.content === 'string').slice(-6)
-      .map(m => `${m.role === 'user' ? name : 'Orbit'}: ${m.content.slice(0, 300)}`).join('\n');
+      .map(m => `${m.role === 'user' ? name : me}: ${m.content.slice(0, 300)}`).join('\n');
     const handoff = this.engine === 'gemini'
       ? 'call the orbit_task tool with one clear, self-contained request'
       : 'delegate it to your backend';
-    return `You are Orbit, the voice of ${name}'s personal agent, which lives on their Windows laptop.
+    return `You are ${me}, the voice of ${name}'s personal agent, which lives on their Windows laptop${me !== 'Orbit' ? ` (built on Orbit, the desktop agent app; your name is ${me})` : ''}.
 
 How you talk:
 - Like a sharp, warm friend on a call: short, natural, relaxed. One or two sentences at a time, then let them talk.
@@ -110,7 +112,7 @@ What you can do:
 
 About ${name}:
 ${user || '(nothing saved yet)'}
-${recent ? `\nRecent chat with Orbit:\n${recent}` : ''}`;
+${recent ? `\nRecent chat with ${me}:\n${recent}` : ''}`;
   }
 
   // ---------------- lifecycle ----------------
@@ -259,7 +261,7 @@ ${recent ? `\nRecent chat with Orbit:\n${recent}` : ''}`;
       return this._send({ toolResponse: { functionResponses: [{ id: fc.id, name: fc.name, response: { result } }] } });
     }
     // A plain "open spotify" sent as a task still goes the instant way.
-    const q = fc.name === 'orbit_task' && quick.parse(request);
+    const q = fc.name === 'orbit_task' && quick.parse(request, assistantNameOf(this.store.getSettings()));
     if (fc.name !== 'orbit_task') result = `Unknown tool ${fc.name}.`;
     else result = q ? await this._quick(q, request) : await this._delegate(request, request);
     if (!this.active || !this.ws) { if (!q && fc.name === 'orbit_task') this._afterCall(request, result); return; }
@@ -314,10 +316,10 @@ ${recent ? `\nRecent chat with Orbit:\n${recent}` : ''}`;
   async _openaiDelegation(id) {
     if (!id) return;
     this.currentDelegation = id;
-    const convo = this.turns.slice(-10).map(t => `${t.who === 'you' ? 'User' : 'Orbit (voice)'}: ${t.text}`).join('\n');
+    const convo = this.turns.slice(-10).map(t => `${t.who === 'you' ? 'User' : assistantNameOf(this.store.getSettings()) + ' (voice)'}: ${t.text}`).join('\n');
     const request = `Live voice conversation so far:\n${convo || '(just started)'}\n\nDo what the user is asking for in their latest turn.`;
     const lastYou = [...this.turns].reverse().find(t => t.who === 'you');
-    const q = lastYou && quick.parse(lastYou.text);
+    const q = lastYou && quick.parse(lastYou.text, assistantNameOf(this.store.getSettings()));
     const result = q ? await this._quick(q, lastYou.text.trim()) : await this._delegate(request, lastYou ? lastYou.text.trim() : 'Voice request');
     if (!this.active || !this.ws) { if (!q) this._afterCall(lastYou ? lastYou.text.trim() : 'Voice request', result); return; }
     // GPT-Live paraphrases commentary aloud; keep each append well under its 500-token limit.
@@ -467,7 +469,7 @@ How to sound human (your words are spoken by a natural voice, so write for the e
     const name = s.userName || 'there';
     const h = new Date().getHours();
     const part = h < 5 ? 'Up late' : h < 12 ? 'Morning' : h < 17 ? 'Hey' : h < 22 ? 'Evening' : 'Up late';
-    if (this.noBrain) { this._sayFixed(`${part}, ${name}! It's Orbit. If you can hear me, my voice works. Say something and I'll repeat it back, so we know I can hear you too.`); return; }
+    if (this.noBrain) { this._sayFixed(`${part}, ${name}! It's ${assistantNameOf(s)}. If you can hear me, my voice works. Say something and I'll repeat it back, so we know I can hear you too.`); return; }
     this._orbitRespond({ note: this._openerNote() });
   }
   _openerNote() {

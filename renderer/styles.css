@@ -941,3 +941,22 @@ body.companion-on .msg.assistant .who { display: block; font-size: 12px; font-we
 /* The narrower chat column keeps room for each reply's Listen button (it sits just right of the text). */
 body.companion-on #view-chat .scroller { padding-right: 44px; overflow-x: hidden; }
 .toggle em.tg-t { font-style: normal; }
+
+/* ---- 0.13.1: Phone Link ---- */
+.pl-routes { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }
+.pl-route { display: flex; align-items: center; gap: 9px; font-size: 13px; }
+.pl-route span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.pl-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--line); flex: none; }
+.pl-dot.ok { background: var(--ok); box-shadow: 0 0 0 4px rgba(127,182,133,.15); }
+.pl-dot.busy { background: var(--warn); animation: sbPulse 1.2s ease-in-out infinite; }
+.pl-dot.bad { background: var(--danger); }
+.pl-qr { display: flex; gap: 18px; align-items: center; margin: 6px 0 4px; padding: 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2, rgba(255,255,255,.02)); }
+.pl-qr img { width: 184px; height: 184px; border-radius: 10px; background: #fff; padding: 6px; image-rendering: pixelated; flex: none; }
+.pl-qr-side { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.pl-code { font: 600 26px/1.2 ui-monospace, "Cascadia Code", Consolas, monospace; letter-spacing: .12em; color: var(--accent-2); }
+.pl-devices { display: flex; flex-direction: column; gap: 8px; margin: 8px 0 12px; }
+.pl-dev { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border: 1px solid var(--line); border-radius: var(--radius); }
+.pl-dev-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pl-dev-t span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-adv { margin-top: 6px; }
+.pl-adv[open] summary { margin-bottom: 8px; }

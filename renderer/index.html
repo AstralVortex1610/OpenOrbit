@@ -669,6 +669,48 @@
             <button class="ghost" id="sbAdd" type="button">+ Share a folder or drive</button>
           </div>
 
+          <div class="card" id="plCard">
+            <h3>Phone Link <span class="beta-pill sm">Beta</span></h3>
+            <p class="muted">Use <span class="aname">Orbit</span> from your phone with the <b>Orbit Remote</b> app. Everything still runs on this PC: your API keys, files, browser and models never leave it. The phone is a remote screen, and everything between the two is end-to-end encrypted.</p>
+            <label class="toggle"><input type="checkbox" id="plOn" /><span></span>Turn on Phone Link</label>
+            <div id="plBody" hidden>
+              <div class="pl-routes" id="plRoutes"></div>
+              <div class="pl-pair" id="plPair">
+                <button class="primary" id="plPairBtn" type="button">Pair a phone</button>
+                <div class="pl-qr" id="plQr" hidden>
+                  <img id="plQrImg" alt="Pairing QR code" />
+                  <div class="pl-qr-side">
+                    <b>Scan this with Orbit Remote</b>
+                    <p class="muted sm">Or type this code in the app (when short codes are on):</p>
+                    <div class="pl-code" id="plCode"></div>
+                    <p class="muted sm" id="plExpires"></p>
+                    <div class="row"><button class="ghost sm" id="plCopyLink" type="button">Copy pairing link</button><button class="ghost sm" id="plCancel" type="button">Cancel</button></div>
+                  </div>
+                </div>
+              </div>
+              <h4 class="sb-h">Paired phones</h4>
+              <div id="plDevices" class="pl-devices"></div>
+              <details class="pl-adv"><summary class="muted">Connection</summary>
+                <label class="toggle"><input type="checkbox" id="plLan" /><span></span>Same network: phones on this Wi-Fi connect directly</label>
+                <label>When the phone is on another network
+                  <select id="plRemote">
+                    <option value="cloudflare">Cloudflare quick tunnel (free, no account) + ntfy rendezvous</option>
+                    <option value="relay">My own relay (relay/ in the Orbit repo)</option>
+                    <option value="off">Don't connect from other networks</option>
+                  </select>
+                </label>
+                <div id="plRelayBox">
+                  <label>Relay address<input id="plRelayUrl" placeholder="wss://relay.example.com" autocomplete="off" spellcheck="false" /></label>
+                  <label>Relay token <small class="muted">optional; set the same RELAY_TOKEN on the relay</small><input id="plRelayToken" type="password" placeholder="Saved tokens stay hidden" autocomplete="off" /><small class="muted" id="plRelayTokenState"></small></label>
+                </div>
+                <label class="toggle"><input type="checkbox" id="plNoThird" /><span></span>Never use third-party services (Cloudflare, ntfy.sh) for Phone Link</label>
+                <label>Rendezvous server (ntfy) <small class="muted">only an encrypted note goes here</small><input id="plRz" placeholder="https://ntfy.sh" autocomplete="off" spellcheck="false" /></label>
+                <label>Port<input id="plPort" type="number" min="1024" max="65535" /></label>
+                <div class="row"><button class="ghost" id="plSave" type="button">Save connection</button><span class="muted" id="plSaved"></span></div>
+              </details>
+            </div>
+          </div>
+
           <div class="card">
             <h3>Updates</h3>
             <p class="muted">Orbit updates itself from GitHub. Your settings, chats, memory, projects and tasks stay exactly as they are.</p>
@@ -747,5 +789,6 @@
   <script src="hub.js"></script>
   <script src="connect.js"></script>
   <script src="passwords.js"></script>
+  <script src="phonelink.js"></script>
 </body>
 </html>

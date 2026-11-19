@@ -43,3 +43,9 @@ Data: %APPDATA%\Orbit (settings.json with encrypted keys, thread.json, tasks.jso
 
 ## Building from the repo
 The wake-word model (assets/vosk-model-small-en-us-0.15.tar.gz, about 40 MB) isn't in git. Download https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip, unzip it, and run `tar czf assets/vosk-model-small-en-us-0.15.tar.gz vosk-model-small-en-us-0.15`. The Release workflow does this for you. Push a `v*` tag and it builds the Windows zip and attaches it to a GitHub release.
+
+## v0.13.1: Phone Link + Orbit Remote
+- Phone Link (src/link/): pair an Android phone by QR; everything is sealed end to end in src/link/proto.js. Routes: LAN, bundled Cloudflare quick tunnel + ntfy rendezvous, or your own relay (relay/). Details: docs/phone-link.md, relay/README.md.
+- Orbit Remote APK: remote/tools/build-apk.sh (ANDROID_HOME with build-tools 35, a JDK, apksigner and zipalign on PATH; AAPT2=<arm64 aapt2> on ARM). Output dist-remote/OrbitRemote-0.1.0.apk.
+- Installer on Linux/ARM without a system makensis: the arm64 makensis from electron-builder-binaries nsis@2.0.4 (nsis-bundle-3.13.tar.gz, linux/arm64/makensis) works with electron-builder's NSIS 3.0.4.1 data. Point build/nsis-linux/linux/makensis (or a copy) at that binary, then ELECTRON_BUILDER_NSIS_DIR=<abs dir> npx electron-builder --win nsis --x64 --prepackaged dist/win-unpacked. (Using the 3.13 bundle's own data fails: the uninstaller can't be extracted without Wine.)
+- Tests: node test/link-proto-test.js; xvfb-run -a npx electron --no-sandbox test/link-e2e.js; CHROMIUM=... node test/remote-ui-smoke.js.

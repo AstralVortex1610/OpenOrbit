@@ -35,6 +35,7 @@ contextBridge.exposeInMainWorld('orbit', {
   passwords: { list: () => ipcRenderer.invoke('passwords:list'), save: (l) => ipcRenderer.invoke('passwords:save', l), remove: (id) => ipcRenderer.invoke('passwords:remove', id), reveal: (id) => ipcRenderer.invoke('passwords:reveal', id) },
   connectors: { status: () => ipcRenderer.invoke('connectors:status'), presets: () => ipcRenderer.invoke('connectors:presets'), save: (p) => ipcRenderer.invoke('connectors:save', p), restart: () => ipcRenderer.invoke('connectors:restart') },
   sandbox: { status: () => ipcRenderer.invoke('sandbox:status'), setup: () => ipcRenderer.invoke('sandbox:setup'), reset: () => ipcRenderer.invoke('sandbox:reset'), cleanup: () => ipcRenderer.invoke('sandbox:cleanup'), share: (p, m) => ipcRenderer.invoke('sandbox:share', p, m), unshare: (p) => ipcRenderer.invoke('sandbox:unshare', p) },
+  phoneLink: { status: () => ipcRenderer.invoke('phoneLink:status'), pair: () => ipcRenderer.invoke('phoneLink:pair'), cancel: () => ipcRenderer.invoke('phoneLink:cancel'), revoke: (id) => ipcRenderer.invoke('phoneLink:revoke', id), rename: (id, n) => ipcRenderer.invoke('phoneLink:rename', id, n) },
   computer: { start: () => ipcRenderer.invoke('computer:start'), stop: () => ipcRenderer.invoke('computer:stop') },
   update: { state: () => ipcRenderer.invoke('update:state'), check: () => ipcRenderer.invoke('update:check'), install: () => ipcRenderer.invoke('update:install') },
   phoneUnpairTelegram: () => ipcRenderer.invoke('phone:unpairTelegram'),
@@ -92,7 +93,7 @@ contextBridge.exposeInMainWorld('orbit', {
     close: () => ipcRenderer.invoke('win:close'),
   },
   on: (channel, fn) => {
-    const ok = ['ui:orbiter', 'agent:event', 'tasks:changed', 'ui:focusInput', 'settings:changed', 'live:event', 'voice:progress', 'update:state', 'connectors:changed', 'computer:frame'];
+    const ok = ['phoneLink:status', 'ui:orbiter', 'agent:event', 'tasks:changed', 'ui:focusInput', 'settings:changed', 'live:event', 'voice:progress', 'update:state', 'connectors:changed', 'computer:frame'];
     if (!ok.includes(channel)) return;
     ipcRenderer.on(channel, (_e, payload) => fn(payload));
   },

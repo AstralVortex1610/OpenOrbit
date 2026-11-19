@@ -17,6 +17,7 @@
     "electron": "^38.0.0",
     "electron-builder": "^26.0.0",
     "esbuild": "^0.28.2",
+    "jsqr": "^1.4.0",
     "kokoro-js": "^1.2.1",
     "resedit": "^2.0.3",
     "vosk-browser": "^0.0.8"
@@ -63,6 +64,8 @@
     "jszip": "^3.10.2",
     "playwright-core": "^1.64.1",
     "pptxgenjs": "^4.0.1",
+    "qrcode": "^1.5.4",
+    "tweetnacl": "^1.0.3",
     "ws": "^8.22.0"
   }
 }

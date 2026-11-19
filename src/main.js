@@ -12,6 +12,10 @@ const { Updater, updateInProgress } = require('./updater');
 const { Orbiter, TIERS, MODES } = require('./orbiter');
 const { Sandbox } = require('./sandbox');
 const { Browser } = require('./browser');
+// Phone Link: every IPC handler is also kept here, so a paired phone can call the same ones (src/link/desktop.js).
+const ipcHandlers = new Map();
+{ const handle = ipcMain.handle.bind(ipcMain); ipcMain.handle = (ch, fn) => { ipcHandlers.set(ch, fn); return handle(ch, fn); }; }
+let phoneLink = null;
 // Lets the on-device voice models use several CPU threads.
 app.commandLine.appendSwitch('enable-features', 'SharedArrayBuffer');
 
@@ -21,7 +25,7 @@ let quitting = false;
 const ICON = path.join(__dirname, '..', 'assets', 'icon.png');
 
 const store = new Store(app.getPath('userData'), safeStorage);
-const send = (channel, payload) => { if (win && !win.isDestroyed()) win.webContents.send(channel, payload); };
+const send = (channel, payload) => { if (win && !win.isDestroyed()) win.webContents.send(channel, payload); if (phoneLink) phoneLink.forward(channel, payload); };
 const updater = new Updater({ app, send: (c, p) => send(c, p) });
 // Quit for real so the update can replace the files: close windows, stop helpers, and force exit if anything hangs.
 // A background download finished: install now if Orbit is idle and you're not using it, else at the next idle moment or on quit.
@@ -31,7 +35,7 @@ function userNotLooking() { let idle = 0; try { idle = powerMonitor.getSystemIdl
 updater.onReady = (st) => {
   send('agent:event', { type: 'notice', title: `Orbit ${st.latest} is ready`, text: 'It installs by itself when Orbit is idle, or now from Settings → Updates.' });
   clearInterval(updater._idleTimer);
-  const tryNow = () => { if (updater.state.status !== 'ready') return clearInterval(updater._idleTimer); if (orbitIdle() && userNotLooking()) { clearInterval(updater._idleTimer); updater.apply(); } };
+  const tryNow = () => { if (updater.state.status !== 'ready') return clearInterval(updater._idleTimer); if (orbitIdle() && userNotLooking() && !(phoneLink && phoneLink.inUse())) { clearInterval(updater._idleTimer); updater.apply(); } };
   updater._idleTimer = setInterval(tryNow, 30 * 1000); updater._tryNow = tryNow; tryNow();
 };
 updater.onQuit = () => { quitting = true; setTimeout(() => app.exit(0), 3000); try { app.quit(); } catch { app.exit(0); } };
@@ -93,6 +97,7 @@ function shouldPingPhone(focused) {
 
 // Orbiter lives inside the main window (as a frame in the Orbiter view and in each project), so its events go to those frames.
 function sendOrb(channel, payload) {
+  if (phoneLink) phoneLink.forward(channel, payload);
   if (!win || win.isDestroyed()) return;
   try { for (const f of win.webContents.mainFrame.framesInSubtree) { if (f !== win.webContents.mainFrame && /orbiter\.html/.test(f.url || '')) f.send(channel, payload); } } catch {}
 }
@@ -388,6 +393,7 @@ if (updateInProgress(app)) {
     updater.startAuto(store.getSettings().autoUpdate !== false);
     agent.connectors.onChange = () => send('connectors:changed', agent.connectors.status());
     setTimeout(() => agent.connectors.restart().catch(e => console.error(e)), 3000);
+    phoneLink.apply(store.getSettings()).catch(e => console.error('[phone link]', e));
   });
   app.on('before-quit', () => {
   if (updater.state.status === 'ready') { try { updater.apply({ relaunch: false }); } catch {} }
@@ -430,3 +436,7 @@ async function castAttach() {
 }
 ipcMain.handle('computer:start', async () => { await castStop(); cast = { page: undefined }; const tick = () => castAttach().catch(() => {}); cast.poll = setInterval(tick, 1000); await tick(); return { log: computerLog.slice(-120) }; });
 ipcMain.handle('computer:stop', () => castStop());
+
+// ---- Phone Link: the Orbit Remote phone app (off unless turned on in Settings → Phone Link) ----
+phoneLink = require('./link/desktop').install({ app, ipcMain, handlers: ipcHandlers, store, agent, updater, powerMonitor, getWin: () => win, resourcesPath: process.resourcesPath });
+if (process.env.ORBIT_TEST_HOOKS) global.__orbit = { phoneLink, updater, store };

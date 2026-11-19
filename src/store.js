@@ -73,6 +73,14 @@ const DEFAULT_SETTINGS = {
   sandboxRamGb: 4,
   sandboxShares: [], // [{ path, mode: read | ask | full }]
   sandboxCleanedAt: 0,
+  // Phone Link (0.13.1): the Orbit Remote phone app. Everything runs here; the phone is a remote screen.
+  phoneLinkEnabled: false, // off by default: no server, no tunnel, nothing listening
+  phoneLinkLan: true, // let phones on the same network connect directly
+  phoneLinkPort: 47821,
+  phoneLinkRemote: 'cloudflare', // how a phone on another network reaches this PC: 'cloudflare' (quick tunnel + ntfy rendezvous) | 'relay' (your own relay) | 'off' (same network only)
+  phoneLinkRelayUrl: '', // wss://your-relay.example.com (relay/ in this repo)
+  phoneLinkNoThirdParty: false, // true: never use Cloudflare or ntfy.sh for Phone Link, whatever else is set
+  phoneLinkRendezvous: 'https://ntfy.sh', // ntfy server for the encrypted "where is my laptop" note (self-hosted ntfy works too)
   orbiterHandoffMode: 'off', // off: only when the user asks for Orbiter by name | suggest: may offer, hands off only after a yes
 };
 // The assistant's display name: trimmed, at most 24 characters, "Orbit" when empty.
@@ -96,7 +104,7 @@ function fixModelName(m, u) {
   return /generativelanguage\.googleapis\.com/i.test(String(u || '')) ? s.replace(/^models\//, '') : s;
 }
 
-const SECRET_KEYS = ['liveGeminiKey', 'liveOpenaiKey', 'googleClientSecret', 'googleRefresh', 'netlifyToken', 'imageApiKey', 'hibpKey'];
+const SECRET_KEYS = ['liveGeminiKey', 'liveOpenaiKey', 'googleClientSecret', 'googleRefresh', 'netlifyToken', 'imageApiKey', 'hibpKey', 'phoneLinkRelayToken'];
 
 const DEFAULT_TASKS = [
   {

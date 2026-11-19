@@ -29,9 +29,10 @@ const MAX_DOWN = 200 * 1024 * 1024, MAX_UP = 50 * 1024 * 1024;
 
 function install({ app, ipcMain, handlers, store, agent, updater, powerMonitor, getWin, resourcesPath, log }) {
   log = log || ((m) => { try { fs.appendFileSync(path.join(app.getPath('userData'), 'phone-link.log'), `${new Date().toISOString()} ${m}\n`); } catch {} });
+  const laptopName = () => { const h = String(os.hostname() || '').trim(); return !h || /^\(?none\)?$|^localhost$/i.test(h) ? 'your laptop' : h; };
   const info = () => {
     const s = store.getSettings();
-    return { assistantName: s.assistantName || 'Orbit', userName: s.userName || '', version: app.getVersion(), laptop: os.hostname(), platform: process.platform, theme: s.theme || 'dark', update: updater ? { status: updater.state.status, latest: updater.state.latest || '' } : null };
+    return { assistantName: s.assistantName || 'Orbit', userName: s.userName || '', version: app.getVersion(), laptop: laptopName(), platform: process.platform, theme: s.theme || 'dark', update: updater ? { status: updater.state.status, latest: updater.state.latest || '' } : null };
   };
 
   // Files a phone may download: Orbit's own data folder (minus settings and secrets) and the user's home,

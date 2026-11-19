@@ -26,7 +26,11 @@
     }
     async _get(k) { const v = await this.storage.get(k); return v == null ? null : v; }
     async _set(k, v) { await this.storage.set(k, v); }
-    async load() { const s = await this._get('orbit.link'); this.pairing = s ? JSON.parse(s) : null; if (this.pairing) this._setState('offline', 'not connected yet'); return this.pairing; }
+    load() {
+      if (this._loading) return this._loading;
+      this._loading = (async () => { const s = await this._get('orbit.link'); this.pairing = s ? JSON.parse(s) : null; if (this.pairing) this._setState('connecting', 'starting'); return this.pairing; })();
+      return this._loading;
+    }
     async _save() { await this._set('orbit.link', this.pairing ? JSON.stringify(this.pairing) : null); }
     get paired() { return !!(this.pairing && this.pairing.id); }
 

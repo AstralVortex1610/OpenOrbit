@@ -962,7 +962,7 @@
     applyTheme(settings.theme);
     applyName(assistantName(settings)); applyInterface(settings.interfaceStyle);
     if (window.OrbitVoice && window.OrbitCompanion) OrbitVoice.onVoice((m) => { if (m.type === 'win_boundary') OrbitCompanion.boundary(); });
-    $('#cmpTalk').onclick = () => startLive();
+    if ($('#cmpTalk')) $('#cmpTalk').onclick = () => startLive();
     greeting();
     syncWake();
     renderThread(await api.getThread());
